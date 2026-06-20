@@ -1,0 +1,23 @@
+{
+  "name": "raycast-extensions",
+  "version": "0.1.0",
+  "description": "Stage-keyed skills for the full Raycast-extension lifecycle: scaffold (new), develop (change code, modernize, house-style audit fix), ship (dep hygiene, house-style audit, Store compliance, PR, mirror, cleanup).",
+  "author": {
+    "name": "Chris Messina",
+    "email": "chris.messina@gmail.com",
+    "url": "https://github.com/chrismessina"
+  },
+  "homepage": "https://github.com/chrismessina/raycast-extension-workflows",
+  "repository": "https://github.com/chrismessina/raycast-extension-workflows",
+  "license": "MIT",
+  "keywords": [
+    "raycast",
+    "raycast-extensions",
+    "scaffold",
+    "develop",
+    "ship",
+    "house-style",
+    "keyboard-shortcuts",
+    "lifecycle"
+  ]
+}
