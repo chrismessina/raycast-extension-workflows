@@ -1,0 +1,33 @@
+{
+  "name": "raycast-extension-workflows",
+  "owner": {
+    "name": "Chris Messina",
+    "url": "https://github.com/chrismessina"
+  },
+  "metadata": {
+    "description": "Chris's Raycast-extension tooling: lifecycle-stage skills + upstream-sync workflows.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "raycast-extensions",
+      "description": "Stage-keyed skills for the full Raycast-extension lifecycle: scaffold (new), develop (change code, modernize, house-style audit fix), ship (dep hygiene, house-style audit, Store compliance, PR, mirror, cleanup).",
+      "author": {
+        "name": "Chris Messina",
+        "url": "https://github.com/chrismessina",
+        "email": "chris.messina@gmail.com"
+      },
+      "homepage": "https://github.com/chrismessina/raycast-extension-workflows",
+      "tags": [
+        "raycast",
+        "raycast-extensions",
+        "lifecycle",
+        "scaffold",
+        "develop",
+        "ship",
+        "house-style"
+      ],
+      "source": "./plugins/raycast-extensions"
+    }
+  ]
+}

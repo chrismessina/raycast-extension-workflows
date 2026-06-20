@@ -1,10 +1,46 @@
 # raycast-extension-workflows
 
-GitHub Actions workflows for keeping standalone Raycast extension repos in sync with the upstream [`raycast/extensions`](https://github.com/raycast/extensions) monorepo.
+Chris's Raycast-extension tooling. This repo holds two things:
+
+1. **The `raycast-extensions` Claude Code plugin** — lifecycle-stage skills (`scaffold` / `develop` / `ship`) for building, modernizing, and shipping Raycast extensions. See [Plugin](#plugin) below.
+2. **GitHub Actions sync workflows** — keep standalone extension repos in sync with the upstream [`raycast/extensions`](https://github.com/raycast/extensions) monorepo. See [Sync workflows](#sync-workflows) below.
 
 ---
 
-## Overview
+## Plugin
+
+A Claude Code plugin (`plugins/raycast-extensions/`) whose skills are keyed to lifecycle **stages** (verbs), not roles (nouns), so their triggers don't overlap.
+
+| Skill | Fires when | Owns |
+|---|---|---|
+| **`scaffold`** | "create / start a **new** extension" | Ideate (reuses `superpowers:brainstorming` + a Raycast-API overlay) and scaffold net-new. |
+| **`develop`** | "change code", "migrate to ESLint 10 / new Node", "**bring this up to my house style**" | Feature/refactor, gated major dep migrations, and the **house-style audit fix** (retrofit existing code to House Style). Absorbs the former `raycast-extension-modernizer`. |
+| **`ship`** | "submit / publish to the Store", "address review feedback" | Pre-flight (dep hygiene + **house-style audit** + weeding), Store-compliance gate, PR prep, review-feedback cycle, mirror-sync verification, post-merge cleanup. |
+
+The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. Shared facts live in `plugins/raycast-extensions/reference/` (`house-style.md`, `keyboard-conventions.md`, and stubs for sparse-checkout discipline, dep gates, PR conventions, Store guidelines, and the extension mirror — which points back at the sync workflows below).
+
+> **Status:** v0.1.0. `develop` + the two House Style references are authored deeply; `scaffold` / `ship` are first-draft stubs. Design spec: [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
+
+### Install (local, for development)
+
+The repo *is* the plugin — install from the local path so edits are live with no copy to keep in sync:
+
+```sh
+claude plugin marketplace add ~/Developer/GitHub/chrismessina/raycast-extension-workflows
+claude plugin install raycast-extensions@raycast-extension-workflows
+```
+
+(Or use the `/plugin` menu: Browse marketplaces → add local path → install.) Restart Claude Code afterward so the skills load.
+
+### Iterating
+
+Edit a `SKILL.md` or `reference/*.md` → restart Claude Code → it's live. No reinstall. Commit + push is the save point, not the deploy step. Adding a *new* skill folder or changing a skill's `description` (the trigger text) needs a full restart, not just a soft reload.
+
+---
+
+## Sync workflows
+
+### Overview
 
 The Raycast extensions monorepo is the source of truth for all published extensions. When you maintain an extension in a standalone repo (e.g. `chrismessina/raycast-fathom`), changes merged upstream — by you or a contributor — won't automatically appear in your repo. This setup solves that.
 
