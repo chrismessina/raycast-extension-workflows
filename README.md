@@ -23,7 +23,7 @@ The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store 
 
 ### Install (local, for development)
 
-The repo *is* the plugin — install from the local path so edits are live with no copy to keep in sync:
+Add the repo as a local-path marketplace, then install the plugin from it:
 
 ```sh
 claude plugin marketplace add ~/Developer/GitHub/chrismessina/raycast-extension-workflows
@@ -32,9 +32,23 @@ claude plugin install raycast-extensions@raycast-extension-workflows
 
 (Or use the `/plugin` menu: Browse marketplaces → add local path → install.) Restart Claude Code afterward so the skills load.
 
+The marketplace `source` points at this repo directory, so the repo is the source of truth — but **install copies the plugin into a version-keyed cache** (`~/.claude/plugins/cache/<marketplace>/raycast-extensions/<version>/`). It is **not** a live symlink: editing the repo does not update the running plugin until you refresh the cache.
+
 ### Iterating
 
-Edit a `SKILL.md` or `reference/*.md` → restart Claude Code → it's live. No reinstall. Commit + push is the save point, not the deploy step. Adding a *new* skill folder or changing a skill's `description` (the trigger text) needs a full restart, not just a soft reload.
+The edit loop has a refresh step:
+
+```sh
+# 1. edit  plugins/raycast-extensions/skills/*/SKILL.md  (or reference/*.md)
+# 2. refresh the cache from this repo's source
+claude plugin marketplace update raycast-extension-workflows
+# 3. apply (restart required)
+claude plugin update raycast-extensions   # then restart Claude Code
+```
+
+For a body edit to an existing skill, step 2 + a restart is usually enough. **When you add a new skill folder or make a substantive change, bump `version` in `plugins/raycast-extensions/.claude-plugin/plugin.json`** (and the marketplace entry) so the version-keyed cache invalidates cleanly — same-version refreshes can be sticky. `claude plugin tag` creates a `raycast-extensions--v{version}` git tag and validates that `plugin.json` and the marketplace entry agree.
+
+Commit + push is the save point, not the deploy step.
 
 ---
 
