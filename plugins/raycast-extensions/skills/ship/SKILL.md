@@ -24,7 +24,7 @@ Run before PR. Each layer is gardening, not engineering:
 2. **House-style audit** (read-only — the `npm audit` twin) — assert against `reference/house-style.md` + `reference/keyboard-conventions.md`:
    - Every `Toast.Style.Failure` has a "Copy Error" action.
    - Web-request extensions use `@chrismessina/raycast-logger`.
-   - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — never by trusting a green `ray lint`. The `prefer-common-shortcut` autofixer **creates** these collisions and then reports no error for them. **Never run `ray lint --fix` here**; if it ran upstream, `git diff` the action files (see `reference/keyboard-conventions.md`).
+   - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one (see `reference/keyboard-conventions.md`).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.

@@ -81,35 +81,19 @@ Also note: the **first and second** actions in a panel auto-get the default prim
 
 ---
 
-## 🚨 `ray lint --fix` BREAKS the conflict invariant `[both]`
+## `ray lint --fix` does not check the conflict invariant `[both]`
 
-**Never run `ray lint --fix` (or `eslint --fix`) on a file with shortcuts and assume the result is correct. Always `git diff` the action files afterward.**
+**A clean `ray lint` is NOT evidence that a panel is collision-free.** Nothing in `@raycast/eslint-plugin` checks whether two actions in one ActionPanel resolve to the same shortcut. You must assert it by reading the resolved panel.
 
-The `@raycast/eslint-plugin` rule `prefer-common-shortcut` is `fixable: "code"`, and its autofixer rewrites **each `shortcut` attribute in isolation** — it has no idea what the sibling actions in the same `ActionPanel` are bound to. It will happily collapse two *distinct* shortcuts onto the *same* `Common.*` constant, producing a collision it then reports no error for. Two failure modes, both reproduced against `@raycast/eslint-config` 2.2.0 on 2026-07-13:
+What `prefer-common-shortcut --fix` actually does: it rewrites a shortcut whose **keys already equal** a `Common` member's into the named constant. That is a *spelling* change, not a behaviour change. So if `--fix` leaves you with two `Common.Copy` actions in one panel, **the collision was already there** — you had written `{cmd+shift+c}` by hand next to a `Common.Copy`, which is the same keys — and the fixer merely made it visible.
 
-**1. It creates collisions.** Distinct shortcuts in one panel → same `Common`:
+> **This is the trap, and it is a trap about you, not about the tool.** Writing an explicit `{ modifiers: ["cmd","shift"], key: "c" }` *feels* like you invented a distinct shortcut. It isn't: it's `Common.Copy` spelled out. The `Common` table below is the only way to know whether the combo you just typed is already taken. **Check every custom shortcut against the table before assigning it** — that's what prevents the collision, not avoiding `--fix`.
+>
+> Learned the hard way, 2026-07-13, on `reader-mode`: assigned Summarize `⌘S` (= `Common.Save`, already on "Save as Markdown") and Copy URL `⌘⇧C` (= `Common.Copy`, already on "Copy as Markdown"). Two collisions, both mine. `--fix` canonicalised them and I briefly blamed the linter.
 
-```tsx
-// BEFORE — two actions, two distinct shortcuts
-<Action.CopyToClipboard title="Copy as Markdown" shortcut={Keyboard.Shortcut.Common.Copy} />
-<Action.CopyToClipboard title="Copy URL" shortcut={{
-  macOS: { modifiers: ["cmd", "shift"], key: "c" },
-  Windows: { modifiers: ["ctrl", "shift"], key: "c" },
-}} />
+**The one real `--fix` hazard** — worth knowing, but narrow: on a **single-form** shortcut containing `ctrl` (e.g. `{ modifiers: ["ctrl","shift"], key: "c" }`), `prefer-common-shortcut` matches against *either* platform's binding (`macMatch || winMatch`) and will rewrite it to `Common.Copy`, committing you to that member's macOS binding too. Note that such a shortcut *also* trips `no-ambiguous-platform-shortcut` ("provide platform-specific shortcuts") — and `--fix` makes that warning disappear without you ever answering it. If you see the ambiguity warning, **resolve it yourself; don't let `--fix` decide.**
 
-// AFTER `eslint --fix` — both are Common.Copy. One action is now unreachable.
-<Action.CopyToClipboard title="Copy as Markdown" shortcut={Keyboard.Shortcut.Common.Copy} />
-<Action.CopyToClipboard title="Copy URL" shortcut={Keyboard.Shortcut.Common.Copy} />
-```
-
-**2. It silently changes which keys you press on macOS.** `findMatchingCommon` matches a single-form shortcut against *either* platform's binding (`macMatch || winMatch`), so a macOS `ctrl+shift+C` (literal **Control**) is "matched" to `Common.Copy` — whose macOS binding is `cmd+shift+C` (**Command**). Different physical keys, rewritten without comment:
-
-```tsx
-// BEFORE:  shortcut={{ modifiers: ["ctrl", "shift"], key: "c" }}   // ⌃⇧C on macOS
-// AFTER:   shortcut={Keyboard.Shortcut.Common.Copy}                 // ⌘⇧C on macOS
-```
-
-**Consequence for the audit-fix flow:** do the `Common` remap **by semantics, by hand** (per the contract below), then run `ray lint` (no `--fix`) to *check*. If `--fix` has already run, re-derive every shortcut it touched — a clean lint run is not evidence the panel is collision-free, because the rule that rewrote them does not check for collisions at all.
+**Practical rule for the audit-fix flow:** do the `Common` remap by semantics, by hand (per the contract below), checking each combo against the table. Run `ray lint` (no `--fix`) to check. If `--fix` did run, `git diff` the action files — not because it corrupts them, but because a green result tells you nothing about collisions.
 
 ---
 

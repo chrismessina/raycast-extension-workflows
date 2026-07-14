@@ -58,10 +58,14 @@ The retrofit pass: take an extension that works (a fork you're contributing to, 
    - Web requests → grep `fetch`/`axios`/`node-fetch`/`useFetch`; if present, check for `@chrismessina/raycast-logger`.
    - `[lint]` rules (hand-defined `Preferences`/`Arguments`, `any` casts) — fix if found, but the durable home is ESLint; you're the backstop.
 3. **Present a worklist** of violations before mutating en masse. Fix iteratively; show diffs.
-4. **Apply the keyboard transformation contract** exactly (semantics over combo; drop platform-specific inline objects; fix imports; re-check the conflict invariant after rewriting — a remap can create a new collision). **Do the remap by hand — never with `ray lint --fix`** (see below).
-5. **Build + lint** to confirm nothing broke — `npx tsc --noEmit`, `ray build`, and `ray lint` **without `--fix`**.
+4. **Apply the keyboard transformation contract** exactly (semantics over combo; drop platform-specific inline objects; fix imports; re-check the conflict invariant after rewriting — a remap can create a new collision).
+5. **Build + lint** to confirm nothing broke — `npx tsc --noEmit`, `ray build`, `ray lint`.
 
-> 🚨 **`ray lint --fix` silently breaks shortcuts.** The `prefer-common-shortcut` autofixer rewrites each `shortcut` in isolation, so it collapses two *distinct* shortcuts in one ActionPanel onto the same `Common.*` (a collision it then reports no error for), and it remaps a macOS `ctrl+…` shortcut to a `cmd+…` `Common` — changing which keys the user presses. Reproduced against `@raycast/eslint-config` 2.2.0. If `--fix` has run, **`git diff` every action file and re-derive the shortcuts it touched**; a clean lint run is *not* evidence the panel is collision-free. Full detail + repro: [`../../reference/keyboard-conventions.md`](../../reference/keyboard-conventions.md).
+> 🚨 **A green `ray lint` does NOT mean the panel is collision-free.** Nothing in `@raycast/eslint-plugin` checks whether two actions in one ActionPanel resolve to the same shortcut — you must assert it by reading the resolved panel.
+>
+> **And a hand-written combo is not automatically a distinct one.** `{ modifiers: ["cmd","shift"], key: "c" }` *is* `Common.Copy`; `{ modifiers: ["cmd"], key: "s" }` *is* `Common.Save`. Writing one out longhand next to an action already using that `Common` constant is a collision you created. **Check every custom combo against the `Common` table in [`../../reference/keyboard-conventions.md`](../../reference/keyboard-conventions.md) before assigning it.** (If `ray lint --fix` then rewrites your longhand into the constant, it is canonicalising a collision that was already there — not causing one.)
+>
+> The one genuine `--fix` hazard: on a **single-form** shortcut containing `ctrl`, `prefer-common-shortcut` matches either platform's binding and rewrites it — which also silently clears the `no-ambiguous-platform-shortcut` warning telling you to declare both platforms yourself. If you see that warning, resolve it by hand.
 6. **Hand forward to `ship`** when clean — `ship` re-runs the read-only audit as the gate.
 
 > **Forked-extension caveat:** when retrofitting a fork you're contributing *upstream*, House Style is *your* convention — be judicious about imposing personal patterns (e.g. `@chrismessina/raycast-logger`) on someone else's extension you don't own. Apply universally-good fixes (Copy-Error, `Common` shortcuts, no `any`) freely; flag personal-dependency additions for the user's call before adding them to a non-`chrismessina`-authored extension.
@@ -85,7 +89,7 @@ Every code change here must conform to House Style. The canonical, tagged checkl
 
 - **Don't conflate hygiene with migration.** "Update my deps" is ambiguous — non-breaking refresh is `ship`; a major migration is here. If unsure which the user means, ask before bumping.
 - **A semantic shortcut remap can introduce a conflict.** Always re-verify the ActionPanel conflict invariant *after* rewriting, not just before.
-- **`ray lint --fix` is not safe on shortcuts.** Its `prefer-common-shortcut` autofixer creates ActionPanel collisions and can change which physical keys a macOS shortcut uses. Run `ray lint` to *check*; do the fixes by hand. If `--fix` already ran, diff the action files before trusting the green result.
+- **A longhand combo is not a distinct combo.** `{cmd+shift+c}` *is* `Common.Copy`; `{cmd+s}` *is* `Common.Save`. Spelling one out next to an action already on that constant is a collision — and `ray lint` will not tell you, because no rule checks the invariant. Check the `Common` table before assigning any custom shortcut.
 - **`[lint]` rules are not your job to fully own.** Fix what you find, but push the durable enforcement to ESLint — don't turn `develop` into a hand-rolled linter.
 - **Forks aren't yours.** Be careful adding personal dependencies to extensions authored by someone else (see the forked-extension caveat).
 - **New files won't show in `git diff`.** Cross-reference `git status` when reviewing what you changed.
