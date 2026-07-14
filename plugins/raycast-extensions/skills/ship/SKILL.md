@@ -3,12 +3,9 @@ name: ship
 description: Get an existing Raycast extension into raycast/extensions and clean up — runs the pre-flight (dep hygiene + house-style AUDIT + weeding), fetches Store-compliance docs, submits the PR (via `ray publish`/`npm run publish` for monorepo extensions you contribute to, or the standalone-mirror fork-sync for your own extensions), preps the PR title/body, drives the review-feedback cycle, and sweeps merged branches. Fires on "submit / publish / ship to the Store", "npm run publish", or "address review feedback (metadata/screenshots)." Does NOT change code behavior — if feedback needs code, hands BACK to `develop`.
 metadata:
   stage: "2a + 3 + 5 + 6 + 7 — pre-flight, compliance, PR, review, cleanup"
-  status: stub
 ---
 
 # ship
-
-> **STUB — authored to first-draft depth.** Deep authoring pending. The design contract is fixed; the prose below is the skeleton.
 
 ## The seam: `ship` never changes code behavior
 
@@ -27,7 +24,7 @@ Run before PR. Each layer is gardening, not engineering:
 2. **House-style audit** (read-only — the `npm audit` twin) — assert against `reference/house-style.md` + `reference/keyboard-conventions.md`:
    - Every `Toast.Style.Failure` has a "Copy Error" action.
    - Web-request extensions use `@chrismessina/raycast-logger`.
-   - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.**
+   - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — never by trusting a green `ray lint`. The `prefer-common-shortcut` autofixer **creates** these collisions and then reports no error for them. **Never run `ray lint --fix` here**; if it ran upstream, `git diff` the action files (see `reference/keyboard-conventions.md`).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
@@ -40,9 +37,35 @@ Run before PR. Each layer is gardening, not engineering:
      the old date. Don't rely on that.) Diff the CHANGELOG against the published one
      and confirm only the new entry differs.
 
+## HARD GATE — no PR without a green pre-flight
+
+**The pre-flight above is a gate, not a suggestion. Do not open OR update a Store PR —
+`ray publish`, `gh pr create`, or a push to an existing PR branch — until steps 0–3 have
+actually been RUN and are green.**
+
+This exists because it was violated. On 2026-07-13 the house-style audit was skipped
+before publishing producthunt, and ⌘-only shortcuts (on a cross-platform extension) plus
+Copy-Error-less failure toasts shipped into an open PR. The linter and the human reviewer
+caught them *after* submission. The audit is worthless if it runs after the PR.
+
+Before any submission command, state explicitly which of these you ran and what they
+returned — paste the actual output, don't assert it:
+
+- [ ] `npx tsc --noEmit` → exit 0
+- [ ] `npm run build` → exit 0
+- [ ] `npm run lint` → exit 0
+- [ ] **house-style audit** (step 2) → zero violations, having **read `package.json`
+      `platforms` first** (absent ⇒ macOS-only; see `reference/house-style.md`)
+- [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`; screenshots/README current
+
+**Any violation that needs code → STOP and hand to `develop`.** Do not fix it here and do
+not ship around it. `ship` never changes code behavior.
+
 ## Store compliance gate
 
-Fetch authoritative Store docs (absorbs the old `review` skill). See `reference/store-guidelines.md`. Audit, don't guess.
+Fetch authoritative Store docs (absorbs the old `raycast-extension-review` skill).
+**Fetch — do not audit from memory.** Prefer context7 (`/llmstxt/developers_raycast_llms-full_txt`),
+falling back to WebFetch. Full procedure: `reference/store-guidelines.md`. Audit, don't guess.
 
 ## PR prep
 

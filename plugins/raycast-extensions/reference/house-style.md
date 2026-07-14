@@ -102,6 +102,7 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 
 **Decision 2 — For custom shortcuts only: what does `platforms` in `package.json` say?**
 
+- **`platforms` ABSENT** → treat as **macOS-only**. That is Raycast's historical default (the field postdates Windows support), so an extension with no `platforms` key predates the split and has no Windows leg. Write the plain object; do **not** flag a bare `cmd`-only shortcut. *(Real: 7 of Chris's 34 extensions have no `platforms` field — `at-profile`, `google-books`, `ios-apps`, `raycast-fly`, `wayback-machine`, `craftdocs`, `quick-call`. An auditor that treats absent as cross-platform mis-fires on every one of them.)*
 - **`["macOS"]` only** → plain object: `shortcut={{ modifiers: ["cmd"], key: "l" }}`. There is no Windows leg. A `{ macOS, Windows }` object on a Mac-only extension is dead weight implying portability it doesn't have.
 - **macOS *and* Windows** → platform-explicit form:
   ```ts
@@ -114,14 +115,16 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 
 > **API casing:** the platform keys are **`macOS`** and **`Windows`** (capital W). TypeScript rejects lowercase `windows` — the type is `{ macOS: {...}, Windows: {...} }`.
 
-| `platforms`     | `Common` match | Write                                                 |
-| --------------- | -------------- | ----------------------------------------------------- |
-| macOS only      | Yes            | `Keyboard.Shortcut.Common.X`                          |
-| macOS only      | No             | `{ modifiers: [...], key: "..." }`                    |
-| macOS + Windows | Yes            | `Keyboard.Shortcut.Common.X` (already platform-aware) |
-| macOS + Windows | No             | `{ macOS: {...}, Windows: {...} }`                    |
+| `platforms`         | `Common` match | Write                                                 |
+| ------------------- | -------------- | ----------------------------------------------------- |
+| absent (⇒ macOS)    | Yes            | `Keyboard.Shortcut.Common.X`                          |
+| absent (⇒ macOS)    | No             | `{ modifiers: [...], key: "..." }`                    |
+| macOS only          | Yes            | `Keyboard.Shortcut.Common.X`                          |
+| macOS only          | No             | `{ modifiers: [...], key: "..." }`                    |
+| macOS + Windows     | Yes            | `Keyboard.Shortcut.Common.X` (already platform-aware) |
+| macOS + Windows     | No             | `{ macOS: {...}, Windows: {...} }`                    |
 
-**Audit note:** a bare `cmd`-only shortcut is a defect *only if* `platforms` includes Windows. The auditor MUST read `package.json` `platforms` before flagging — otherwise it mis-fires on every Mac-only extension (which is most of them).
+**Audit note:** a bare `cmd`-only shortcut is a defect *only if* `platforms` **explicitly includes Windows**. The auditor MUST read `package.json` `platforms` before flagging — and must treat an **absent** `platforms` as macOS-only, not as cross-platform. Skipping this mis-fires on every Mac-only extension *and* on every extension with no `platforms` field, which together are the majority of the fleet.
 
 ---
 
