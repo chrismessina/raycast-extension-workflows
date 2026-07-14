@@ -8,6 +8,20 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
 
 ---
 
+## Two independent axes `[build]` (read this first)
+
+Shortcut form is decided by TWO independent questions — do NOT conflate them:
+
+1. **Does a `Common` member match the action's semantics?** Yes → use the `Common` constant (it's already platform-aware; never wrap it in a platform object). No → a custom shortcut is correct.
+2. **For custom shortcuts only — what does `package.json` `platforms` say?** `["macOS"]` → plain `{ modifiers, key }` object. `["macOS","Windows"]` → platform-explicit `{ macOS: {...}, Windows: {...} }` (capital `Windows`; TS rejects lowercase). A bare `cmd`-only object on a cross-platform extension is silently broken on Windows.
+
+| `platforms` | `Common` match | Write |
+|---|---|---|
+| macOS only | Yes | `Keyboard.Shortcut.Common.X` |
+| macOS only | No | `{ modifiers: [...], key: "..." }` |
+| macOS + Windows | Yes | `Keyboard.Shortcut.Common.X` |
+| macOS + Windows | No | `{ macOS: {...}, Windows: {...} }` |
+
 ## The semantic map `[build]`
 
 `Keyboard.Shortcut.Common` is platform-aware — use the constant, not an inline `{ modifiers, key }` object.
@@ -58,9 +72,10 @@ Also note: the **first and second** actions in a panel auto-get the default prim
 
 When `develop` rewrites shortcuts to `Common`:
 
+0. **Read `package.json` `platforms` FIRST.** Everything below depends on whether the extension is `["macOS"]` or `["macOS","Windows"]`. An auditor that skips this mis-fires on Mac-only extensions.
 1. **Infer semantics** from each `<Action>`'s `title`, `icon`, `onAction`, and surrounding JSX/comments.
-2. **Replace** matching inline shortcuts with the `Common` constant; **remove** any platform-specific inline objects (e.g. `{ macOS: {...}, Windows: {...} }`) — the constant is already platform-aware.
-3. **Leave truly-custom shortcuts as-is** — do not force a `Common` where no semantic match exists. Do not invent `Common` names beyond the 17 above.
+2. **If a `Common` member matches → replace with the `Common` constant** (and if it was a platform-explicit object wrapping that semantic, collapse it to the constant — `Common` is already platform-aware). **If NO `Common` matches → keep it custom, in the form `platforms` dictates:** plain `{ modifiers, key }` for macOS-only; `{ macOS: {...}, Windows: {...} }` (capital `Windows`) for cross-platform. Do NOT strip a platform-explicit object on a cross-platform extension — it's required there; a bare `cmd`-only shortcut breaks on Windows.
+3. **Leave truly-custom shortcuts as-is** (only normalizing the object *shape* per axis 2 above) — do not force a `Common` where no semantic match exists. Do not invent `Common` names beyond the 17 above.
 4. **Imports:** ensure `Keyboard` is imported from `@raycast/api`; extend the existing import line; introduce no unused imports.
 5. **Verify the conflict invariant** after rewriting — a semantic remap can create a new collision.
 6. Change only shortcuts — never action titles, behavior, or logic.

@@ -37,6 +37,25 @@ No `as any`, no `: any`.
 - **Durable home:** `@typescript-eslint/no-explicit-any` in the shared config.
 - **Audit backstop:** grep `\bas any\b` / `:\s*any\b` for un-linted forks.
 
+### `[both]` Typecheck with `tsc --noEmit` — `ray build` does NOT typecheck
+
+`ray build` (esbuild) and `ray lint` (ESLint) **strip/skip types without checking
+them** — type errors compile and lint clean, then fail in editors and external
+reviewers running `tsc`. So passing build + lint is **not** evidence the code
+typechecks.
+
+- **Always run `npx tsc --noEmit` as the real type gate** before claiming a change
+  is done, alongside build + lint. Treat a non-zero `tsc` exit as a failure even if
+  `ray build` succeeded.
+- Common trap: a Raycast hook with multiple overloads (e.g. `usePromise` /
+  `useCachedPromise`) silently resolving to the **paginated** overload, inferring
+  `data` as `any[]`. Annotate the fetcher's return type
+  (`(q: string): Promise<YcResult<T>> => …`) to pin the intended overload.
+- TS does **not** carry an early-return narrowing into nested closures: after
+  `if (!x) return`, a `const`-captured `string | null` is still `string | null`
+  inside a later `async function`. Re-bind to a typed const (`const v: string = x`)
+  rather than reaching for `as` / `!`.
+
 ---
 
 ## Required patterns
@@ -72,9 +91,37 @@ catch (error) {
 
 **If yes:** `@chrismessina/raycast-logger` must be a dependency and imported (the `logger` used in the Copy-Error pattern above). Does **not** apply to extensions with no network calls — the audit must check the condition first, or it mis-fires on offline extensions.
 
-### `[both]` Keyboard shortcuts use `Keyboard.Shortcut.Common`
+### `[both]` Keyboard shortcuts: `Common` first, platform-explicit only when cross-platform
 
-Map ad-hoc shortcuts to `Common` by semantics; no conflicts within an ActionPanel. Full ruleset + conflict invariant + audit-fix contract: see [`keyboard-conventions.md`](./keyboard-conventions.md).
+Two independent decisions. Don't conflate them. (Full ruleset + conflict invariant + audit-fix contract: see [`keyboard-conventions.md`](./keyboard-conventions.md).)
+
+**Decision 1 — Does a `Keyboard.Shortcut.Common` member match the action's semantics?**
+
+- **Yes → use the `Common` constant.** Always. It is already platform-aware, so it is correct on every platform with no extra work. Never hand-roll a shortcut that `Common` already covers, and never wrap a `Common` constant in a platform-explicit object.
+- **No → a custom shortcut is correct and expected.** The `Common` set is 17 members; it does not cover everything (no "switch mode", "toggle setting", "connect"). Do not force a bad semantic match — a wrong `Common` is worse than an honest custom shortcut.
+
+**Decision 2 — For custom shortcuts only: what does `platforms` in `package.json` say?**
+
+- **`["macOS"]` only** → plain object: `shortcut={{ modifiers: ["cmd"], key: "l" }}`. There is no Windows leg. A `{ macOS, Windows }` object on a Mac-only extension is dead weight implying portability it doesn't have.
+- **macOS *and* Windows** → platform-explicit form:
+  ```ts
+  shortcut={{
+    macOS: { modifiers: ["cmd"], key: "l" },
+    Windows: { modifiers: ["ctrl"], key: "l" },
+  }}
+  ```
+  A bare `{ modifiers: ["cmd"], … }` on a cross-platform extension is the defect: `cmd` doesn't exist on Windows, so the shortcut is silently broken there. (This is the miss that shipped ⌘-only shortcuts into an open Store PR on 2026-07-13.)
+
+> **API casing:** the platform keys are **`macOS`** and **`Windows`** (capital W). TypeScript rejects lowercase `windows` — the type is `{ macOS: {...}, Windows: {...} }`.
+
+| `platforms`     | `Common` match | Write                                                 |
+| --------------- | -------------- | ----------------------------------------------------- |
+| macOS only      | Yes            | `Keyboard.Shortcut.Common.X`                          |
+| macOS only      | No             | `{ modifiers: [...], key: "..." }`                    |
+| macOS + Windows | Yes            | `Keyboard.Shortcut.Common.X` (already platform-aware) |
+| macOS + Windows | No             | `{ macOS: {...}, Windows: {...} }`                    |
+
+**Audit note:** a bare `cmd`-only shortcut is a defect *only if* `platforms` includes Windows. The auditor MUST read `package.json` `platforms` before flagging — otherwise it mis-fires on every Mac-only extension (which is most of them).
 
 ---
 
