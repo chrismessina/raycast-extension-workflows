@@ -120,6 +120,29 @@ the three steps verbatim (open the fork → **Sync fork** dropdown → **Update
 branch**), then **re-run `npm run publish`** once they confirm. Nothing is wrong with
 the code; don't start debugging the extension.
 
+**Known failure — wrong PR base / diverged fork main → huge diff (verify after every publish).**
+`ray publish` sometimes opens the PR against **`chrismessina:main` (the fork) instead of
+`raycast/extensions:main` (upstream)**. Worse, Chris's fork `main` periodically diverges
+from upstream via GitHub "Sync fork" **merge** commits (it merges rather than
+fast-forwards, and he has real commits directly on fork `main` — a `dispatch-sync.yml`
+workflow and misc — so it can't fast-forward). When the base is the diverged fork main,
+GitHub diffs the branch against it and the PR balloons to **100s of files** — every
+unrelated extension change since the divergence — even though the branch itself only
+touches `extensions/<name>/`. A reviewer will (rightly) flag it. (Observed 2026-07-17 on
+cursors PR #29493: 143 files, base `chrismessina:main`.)
+
+- **Always verify the base after publish:** the PR must read
+  `raycast/extensions:main ← chrismessina:<branch>`, and Files-changed must be only your
+  extension's files. Check with:
+  `gh api repos/raycast/extensions/pulls/<N> --jq '{base_repo:.base.repo.full_name, base:.base.ref, changed_files}'`
+  (REST — works with a `repo`-scoped token; `gh pr edit`/GraphQL needs `read:org` and may fail).
+- **Fix — retarget the base, do NOT rebuild:** the branch is already correct; only the
+  base pointer is wrong. `gh api -X PATCH repos/raycast/extensions/pulls/<N> -f base=main`.
+  The diff collapses to just your extension instantly. No re-clone, no new commits.
+- **Do NOT "fix" this by resetting fork `main`** — it carries Chris's own commits
+  (fork-sync workflow, etc.). Retargeting the PR base is the correct, non-destructive fix.
+  Fork-main divergence is then harmless.
+
 ### Route B — standalone mirror (your own `author: chrismessina` extensions)
 
 Only for first-party extensions with the standalone-mirror topology.
@@ -140,9 +163,30 @@ Actions pipeline, document it and prefer it; until then do not assume automation
 Full topology, the "what ships" allow-list, and the assets-bloat gotcha:
 `reference/my-extensions-mirror.md`.
 
+> **`ray publish` adds and updates, but does NOT delete.** A re-publish syncs new and
+> changed files into the fork branch, but a file you *removed* from the source since the last
+> publish stays in the PR — the fork branch keeps it. Observed 2026-07-14: `.windsurf/` was
+> untracked locally and gone from `origin/main`, yet still sat in the open PR after re-publish.
+> So: after a re-publish that was meant to *remove* a file, **verify the fork branch's file
+> list** (`git fetch --depth 1 --filter=tree:0 <fork> ext/<name>` then `git ls-tree -r --name-only FETCH_HEAD`),
+> and if a removed file lingers, delete it directly from the fork branch —
+> `gh api -X DELETE repos/<you>/extensions/contents/extensions/<name>/<path> -f sha=<blob> -f branch=ext/<name> -f message=…`.
+> Verify PR *content*, not just the file list, by the same route — a staging race can push a
+> commit whose message claims a fix its code lacks.
+
 ## Post-merge cleanup
 
-Sweep merged branches by PR state (squash-merge re-SHAs, so use `gh pr list --head`, not git ancestry). See `reference/pr-and-cleanup.md`.
+Once the Store PR is **merged**, the same handful of steps run every time. They're written out here so the agent executes them directly instead of re-deriving the discovery each merge (which burns tokens on a solved problem). Run in order; each is skippable when it doesn't apply.
+
+1. **Stamp the CHANGELOG to the merge date — the one genuinely manual, recurring step.** Raycast CI replaces `{PR_MERGE_DATE}` with the merge date *in the merged monorepo copy*, but your **standalone mirror still shows the placeholder**. Read the merged Store CHANGELOG (`curl -sL https://raw.githubusercontent.com/raycast/extensions/main/extensions/<ext-dir>/CHANGELOG.md | head`), copy the stamped date onto the matching entry in your local `CHANGELOG.md`, and commit. Do this so the mirror matches what shipped, rather than waiting for the next sync. **Only stamp the entry that just merged** — never touch an entry that already carries a real date (see the weeding rule above).
+
+2. **Confirm the sync workflow pulled upstream — do NOT re-derive main sync by hand.** Chris's extensions use a `sync-from-upstream.yml` GitHub workflow that reconciles the standalone mirror against the merged monorepo state. Check that local/`origin` main reflects the merge (`git fetch origin main && git log --oneline -3`); if the workflow already ran, you're done. Only reconcile manually (FF/rebase) if the workflow is absent or stalled on that repo — don't rebuild automation that already exists. (Open task: verify this workflow is active across *all* his standalone mirrors, not just the ones you've shipped.)
+
+3. **Sweep the merged branch.** Delete the merged feature branch. Squash-merge re-SHAs, so identify merged branches by PR state (`gh pr list --head`), not git ancestry.
+
+4. **Refresh any "open at time of writing" references.** If this session wrote docs or a ce-compound learning that described the PR as open/unmerged, update those merge-state phrasings to "shipped." (Narrow — only when such docs exist.)
+
+See `reference/pr-and-cleanup.md` for the branch-sweep mechanics.
 
 ## Throughline A (hard rail)
 
