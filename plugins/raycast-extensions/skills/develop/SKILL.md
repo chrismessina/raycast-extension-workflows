@@ -80,6 +80,7 @@ Every code change here must conform to House Style. The canonical, tagged checkl
 - **Web-request extensions use `@chrismessina/raycast-logger`** for structured logging.
 - **Shortcuts use `Keyboard.Shortcut.Common`** by semantics — see [`../../reference/keyboard-conventions.md`](../../reference/keyboard-conventions.md).
 - **Never hand-define `Preferences`/`Arguments`** — use the auto-generated ambient types. **No `any` casts.**
+- **A readiness gate that drives `isLoading` must resolve on *every* path — including `.catch`.** If a background task (WASM load, pre-render, prefetch) gates a loading indicator via `isLoading={… || !ready}`, its failure branch must still flip `ready` true. Otherwise one non-critical failure wedges the whole view on a permanent spinner even though the UI is fully functional. The failure gets a toast *and* dismisses the gate — never just the toast.
 
 ## Hands off
 
@@ -89,6 +90,7 @@ Every code change here must conform to House Style. The canonical, tagged checkl
 
 - **Don't conflate hygiene with migration.** "Update my deps" is ambiguous — non-breaking refresh is `ship`; a major migration is here. If unsure which the user means, ask before bumping.
 - **A semantic shortcut remap can introduce a conflict.** Always re-verify the ActionPanel conflict invariant *after* rewriting, not just before.
+- **The fix for one review finding can create the next.** A readiness gate added to fix a race (e.g. "Quick Look points at a file that isn't rendered yet") is exactly how a permanent-spinner bug gets in: the gate's `.catch` forgets to dismiss. When you add a gate, an early return, or a guard to satisfy a reviewer, walk *its own* failure/empty path before moving on — the second-order bug won't be in the diff the reviewer looked at. (Observed on cursors #29493: the Quick Look race fix wedged the grid on WASM-load failure.)
 - **A longhand combo is not a distinct combo.** `{cmd+shift+c}` *is* `Common.Copy`; `{cmd+s}` *is* `Common.Save`. Spelling one out next to an action already on that constant is a collision — and `ray lint` will not tell you, because no rule checks the invariant. Check the `Common` table before assigning any custom shortcut.
 - **`[lint]` rules are not your job to fully own.** Fix what you find, but push the durable enforcement to ESLint — don't turn `develop` into a hand-rolled linter.
 - **Forks aren't yours.** Be careful adding personal dependencies to extensions authored by someone else (see the forked-extension caveat).
