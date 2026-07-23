@@ -101,14 +101,31 @@ Triggered by a `repository_dispatch` event from the fork, or manually via `workf
 
 ### `dispatch-sync.yml` — goes in `chrismessina/extensions` (the fork)
 
-Triggered on every push to `main` that touches `extensions/*/package.json`.
+Triggered on every push to `main` that touches `extensions/*/package.json` (i.e.
+whenever the fork syncs upstream). Also runnable manually via `workflow_dispatch`
+(with an optional `force_all` input that re-dispatches to every mapped repo).
 
 **What it does:**
 1. Sparse-checks out only `extensions/*/package.json` files (fast — no full clone)
-2. Diffs to find which extension package files changed
-3. Reads the `name` field from each changed `package.json`
-4. Derives the target standalone repo name (see naming convention below)
-5. Checks the repo exists, then fires a `repository_dispatch` event to it
+2. Diffs to find which **top-level** `extensions/<dir>/package.json` files changed
+3. Keeps only the dirs present in `MIRROR_MAP` (the allow-list of extensions we mirror)
+4. Looks up each dir's standalone repo via `MIRROR_MAP` (handles renames like
+   `reader-mode` → `raycast-reader`)
+5. Checks the repo exists, then fires a `repository_dispatch` event carrying the
+   monorepo dir as `client_payload.ext_name`
+
+**Why an explicit `MIRROR_MAP` instead of deriving the name (rewritten 2026-07-15):**
+The original derived `chrismessina/raycast-<name>` by convention. Two bugs made it
+dead since 2026-02-27:
+- **Renamed extensions broke:** `reader-mode` derived `raycast-reader-mode` (404) and
+  silently skipped — the real repo is `raycast-reader`. There was no dir→repo map.
+- **The whole loop aborted:** it iterated *every* changed extension in the monorepo
+  (~2000 on a fork-sync) and died (`exit 2`) on a nested/deleted
+  `vendor/*/package.json` in someone else's extension, so nothing after it dispatched.
+
+The allow-list fixes both: only your dirs are considered, nested/deleted files are
+ignored, and renames are explicit. **Keep `MIRROR_MAP` in lockstep with the
+"Currently synced repos" table above.**
 
 **Required secret in `chrismessina/extensions`:** `DISPATCH_PAT` — a fine-grained PAT with **Actions: Read and write** access scoped to all `chrismessina/raycast-*` repos.
 
@@ -158,7 +175,15 @@ Settings → Secrets and variables → Actions → New repository secret
 
 ### 2. Keep the fork in sync with upstream
 
-The dispatcher workflow fires on pushes to `chrismessina/extensions`, which is a fork of `raycast/extensions`. The fork needs to stay in sync with upstream for the chain to work.
+The dispatcher fires on pushes to `chrismessina/extensions` (a fork of
+`raycast/extensions`). **Nothing dispatches unless the fork receives upstream
+commits**, so the fork must be kept synced for the whole chain to run hands-off.
+
+> **Gap found 2026-07-15:** the fork has **no scheduled fork-sync workflow
+> deployed.** Its upstream merges currently come from GitHub's native "Sync fork"
+> (manual button or an ad-hoc `gh repo sync`). Until the scheduled workflow below is
+> added, remote mirrors only refresh when you manually sync the fork. This is the
+> last piece of full automation still missing.
 
 Sync manually anytime with:
 
@@ -166,7 +191,8 @@ Sync manually anytime with:
 gh repo sync chrismessina/extensions
 ```
 
-Or automate it by adding a scheduled workflow to `chrismessina/extensions`:
+To close the gap, add this scheduled workflow to `chrismessina/extensions`
+(`.github/workflows/sync-fork.yml`):
 
 ```yaml
 name: Sync fork with upstream
@@ -183,6 +209,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+Each hourly sync that lands a change to a mirrored `extensions/<dir>/package.json`
+triggers `dispatch-sync.yml`, which fans out to the standalone repos.
 
 ---
 
@@ -235,15 +264,33 @@ No changes to `chrismessina/extensions` are needed — the dispatcher automatica
 
 ## Currently synced repos
 
+This table is the source of truth and **must stay in sync with `MIRROR_MAP` in
+`dispatch-sync.yml`** — the dispatcher only fires for extensions listed there.
+
 | Standalone repo | Monorepo directory | Notes |
 |---|---|---|
-| `chrismessina/raycast-store-updates` | `extensions/raycast-store-updates` | |
+| `chrismessina/raycast-store-updates` | `extensions/raycast-store-updates` | dir already `raycast-`-prefixed |
 | `chrismessina/raycast-fathom` | `extensions/fathom` | |
 | `chrismessina/raycast-at-profile` | `extensions/at-profile` | |
 | `chrismessina/raycast-digger` | `extensions/digger` | |
 | `chrismessina/raycast-get-app-icon` | `extensions/get-app-icon` | |
 | `chrismessina/raycast-secret-browser-commands` | `extensions/secret-browser-commands` | |
-| `chrismessina/raycast-reader` | `extensions/reader-mode` | `UPSTREAM_EXT_DIR` override set |
+| `chrismessina/raycast-reader` | `extensions/reader-mode` | `UPSTREAM_EXT_DIR` override set; dir ≠ repo name |
+| `chrismessina/raycast-bookface` | `extensions/bookface` | added 2026-07-15 |
+| `chrismessina/raycast-luma` | `extensions/luma` | added 2026-07-15 |
+| `chrismessina/raycast-tesla-energy` | `extensions/tesla-energy` | added 2026-07-15 |
+| `chrismessina/raycast-trimmy` | `extensions/trimmy` | added 2026-07-15 |
+| `chrismessina/raycast-wrap-unwrap` | `extensions/wrap-unwrap` | added 2026-07-15 |
+| `chrismessina/raycast-karakeep` | `extensions/karakeep` | contributed-to (author `luolei`); Chris maintains the mirror |
+
+**Not synced (self-authored but not in the public monorepo):** `airbuddy`, `fetch`,
+`google-maps`, `happenstance`, `ios-apps`, `memory-store`, `openskills`,
+`parallel-web-tools`, `sora`, `threads-client`. These 404 at
+`raycast/extensions/extensions/<name>`, so `sync-from-upstream` would fail every run.
+Add them to the table + `MIRROR_MAP` only once they're published upstream.
+
+**Not an extension:** `raycast-logger` is a published npm package
+(`@chrismessina/raycast-logger`), not a Store extension — no upstream dir to sync.
 
 ---
 

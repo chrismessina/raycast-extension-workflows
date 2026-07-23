@@ -16,10 +16,22 @@ this was done end-to-end and documented.
 
 The published extension lives at `raycast/extensions/extensions/<name>/`.
 
-## Submission flow (what actually works — verified)
+## Sync direction — don't confuse the two
 
-There is **no working auto-sync today** (the standalone repo was missing, so nothing
-fired). The reliable, manual flow:
+There are **two opposite flows**, and this doc's "submission flow" below is only one:
+
+- **Outbound (submission):** your local work → `chrismessina/extensions` fork →
+  PR → `raycast/extensions`. Manual; documented below.
+- **Inbound (mirror sync):** `raycast/extensions/extensions/<dir>` → your standalone
+  `chrismessina/raycast-<name>` repo, so the mirror reflects edits made upstream
+  (including during PR review). **Automated** via the sync workflows — see the repo
+  root `README.md` → "Sync workflows". As of 2026-07-15 the inbound dispatcher was
+  rewritten and 5 more mirrors wired up; the one remaining gap is a scheduled
+  fork-sync on `chrismessina/extensions` (see that README).
+
+## Submission flow (outbound — what actually works, verified)
+
+The reliable, manual flow for getting local work into the Store:
 
 1. **Confirm the standalone repo exists.** `gh repo view chrismessina/raycast-<name>`.
    If it 404s, CREATE IT (see "Missing-mirror entry point").
@@ -34,11 +46,12 @@ fired). The reliable, manual flow:
 5. **Open the PR** `chrismessina:update/<name>-<topic>` → `raycast/extensions:main`.
 6. **Cleanup** per pr-and-cleanup.md (track by PR head — squash-merge re-SHAs).
 
-> The stub skill mentions "confirm the dispatcher fired / check sync lag" for an
-> Actions pipeline. As of 2026-06-23 no such pipeline is live for Bookface (the
-> standalone repo didn't exist to host it). If you later wire GitHub Actions to
-> auto-sync standalone→fork→PR, document the dispatcher here and prefer it; until
-> then, the manual flow above is canonical. **Do not assume automation exists.**
+> **Direction note (updated 2026-07-15):** the "dispatcher / sync lag" the stub
+> skill mentions is the **inbound** mirror-sync (upstream → standalone), NOT this
+> outbound submission flow. Inbound automation IS live now (dispatcher rewritten,
+> Bookface + 4 others wired up 2026-07-15) — see the repo root README. The
+> **outbound** submission flow above has no automation and remains manual and
+> canonical: do not assume a pipeline pushes your local work to the Store for you.
 
 ## Missing-mirror entry point (the case that threw the first ship)
 

@@ -5,6 +5,42 @@ on:
     branches: [main]
     paths:
       - "extensions/*/package.json"
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Dispatch to ALL mapped repos regardless of what changed"
+        type: boolean
+        default: false
+
+# Allow-list of the extensions we mirror into standalone chrismessina/* repos.
+# Format: one "<monorepo-dir>:<standalone-repo>" per line.
+#
+# Scoping the dispatcher to THIS list (instead of every changed extension in the
+# monorepo) is deliberate:
+#   1. It fixes renamed extensions — the monorepo dir need not equal the repo name
+#      (e.g. reader-mode -> raycast-reader). The old derive-by-convention logic
+#      dispatched to a non-existent raycast-reader-mode and silently skipped.
+#   2. It stops the whole-loop abort — the old version iterated ALL ~2000 upstream
+#      extensions on every fork-sync and died (exit 2) on a nested/deleted
+#      vendor/*/package.json belonging to someone else's extension.
+#
+# When you publish a new standalone mirror, add its "<dir>:<repo>" line here AND
+# drop sync-from-upstream.yml into that repo (see the plugin README).
+env:
+  MIRROR_MAP: |
+    at-profile:raycast-at-profile
+    bookface:raycast-bookface
+    digger:raycast-digger
+    fathom:raycast-fathom
+    get-app-icon:raycast-get-app-icon
+    karakeep:raycast-karakeep
+    luma:raycast-luma
+    raycast-store-updates:raycast-store-updates
+    reader-mode:raycast-reader
+    secret-browser-commands:raycast-secret-browser-commands
+    tesla-energy:raycast-tesla-energy
+    trimmy:raycast-trimmy
+    wrap-unwrap:raycast-wrap-unwrap
 
 jobs:
   dispatch:
@@ -22,45 +58,72 @@ jobs:
       - name: Find changed extensions and dispatch
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_PAT }}
+          FORCE_ALL: ${{ github.event.inputs.force_all }}
         run: |
-          # Get list of changed package.json files in extensions/
-          changed=$(git diff --name-only HEAD~1 HEAD | grep '^extensions/.*/package.json$')
+          set -euo pipefail
 
-          if [ -z "$changed" ]; then
-            echo "No extension package.json files changed."
+          # repo_for <dir>: echo the standalone repo for a monorepo dir, or nothing.
+          # POSIX lookup against MIRROR_MAP (no associative arrays needed).
+          repo_for() {
+            printf '%s\n' "$MIRROR_MAP" | while IFS=: read -r d r; do
+              [ "$d" = "$1" ] && { printf '%s' "$r"; break; }
+            done
+          }
+
+          # Determine which mirrored dirs to dispatch to.
+          targets=""
+          if [ "${FORCE_ALL:-false}" = "true" ]; then
+            echo "force_all: dispatching to every mapped repo."
+            targets=$(printf '%s\n' "$MIRROR_MAP" | cut -d: -f1 | grep -v '^$' || true)
+          else
+            # Only consider TOP-LEVEL extensions/<dir>/package.json changes.
+            # `git diff` can surface nested vendor package.json files and files
+            # deleted in this push — filter to the mirrored top-level dirs only,
+            # so a stray/deleted nested file can never abort the loop.
+            changed=$(git diff --name-only HEAD~1 HEAD -- 'extensions/*/package.json' || true)
+            for path in $changed; do
+              # extensions/<dir>/package.json  ->  <dir>  (skip anything deeper)
+              case "$path" in
+                extensions/*/package.json)
+                  rest="${path#extensions/}"
+                  dir="${rest%%/*}"
+                  # only the exact top-level file, not extensions/<dir>/sub/package.json
+                  [ "extensions/$dir/package.json" = "$path" ] || continue
+                  if [ -n "$(repo_for "$dir")" ]; then
+                    targets="$targets $dir"
+                  fi
+                  ;;
+              esac
+            done
+          fi
+
+          # De-duplicate.
+          targets=$(echo "$targets" | tr ' ' '\n' | sort -u | grep -v '^$' || true)
+
+          if [ -z "$targets" ]; then
+            echo "No mirrored extensions changed in this push. Nothing to dispatch."
             exit 0
           fi
 
-          # Get the merged PR number and URL from the commit message (best-effort)
-          PR_NUMBER=$(git log -1 --pretty=%s | grep -oE '#[0-9]+' | tr -d '#' | head -1)
+          # Best-effort PR number/URL from the merge commit subject.
+          PR_NUMBER=$(git log -1 --pretty=%s | grep -oE '#[0-9]+' | tr -d '#' | head -1 || true)
           PR_URL=""
           if [ -n "$PR_NUMBER" ]; then
             PR_URL="https://github.com/raycast/extensions/pull/${PR_NUMBER}"
           fi
 
-          for pkg in $changed; do
-            # Extract extension name from package.json
-            ext_name=$(jq -r '.name' "$pkg")
-            if [ -z "$ext_name" ] || [ "$ext_name" = "null" ]; then
-              echo "Could not read name from $pkg, skipping."
+          for dir in $targets; do
+            repo="$(repo_for "$dir")"
+            target_repo="chrismessina/${repo}"
+            echo "Mirrored extension '$dir' changed -> dispatching to $target_repo"
+
+            if ! gh repo view "$target_repo" >/dev/null 2>&1; then
+              echo "  WARNING: $target_repo not found — skipping (add the repo or remove it from MIRROR_MAP)."
               continue
             fi
 
-            # Derive target repo: prefix with "raycast-" unless name already starts with it
-            if echo "$ext_name" | grep -q '^raycast-'; then
-              target_repo="chrismessina/${ext_name}"
-            else
-              target_repo="chrismessina/raycast-${ext_name}"
-            fi
-
-            echo "Extension: $ext_name → dispatching to $target_repo"
-
-            # Check if the target repo exists before dispatching
-            if ! gh repo view "$target_repo" &>/dev/null; then
-              echo "  Repo $target_repo not found, skipping."
-              continue
-            fi
-
+            # Pass the monorepo dir as ext_name so the standalone workflow fetches
+            # the correct upstream directory even when repo name != dir.
             gh api \
               --method POST \
               -H "Accept: application/vnd.github+json" \
@@ -68,7 +131,7 @@ jobs:
               -f event_type="upstream-sync" \
               -F client_payload[pr_number]="${PR_NUMBER}" \
               -F client_payload[pr_url]="${PR_URL}" \
-              -F client_payload[ext_name]="${ext_name}"
+              -F client_payload[ext_name]="${dir}"
 
-            echo "  Dispatched upstream-sync to $target_repo"
+            echo "  Dispatched upstream-sync to $target_repo (ext dir: $dir)"
           done

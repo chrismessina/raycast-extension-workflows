@@ -91,7 +91,9 @@ What `prefer-common-shortcut --fix` actually does: it rewrites a shortcut whose 
 >
 > Learned the hard way, 2026-07-13, on `reader-mode`: assigned Summarize `⌘S` (= `Common.Save`, already on "Save as Markdown") and Copy URL `⌘⇧C` (= `Common.Copy`, already on "Copy as Markdown"). Two collisions, both mine. `--fix` canonicalised them and I briefly blamed the linter.
 
-**The one real `--fix` hazard** — worth knowing, but narrow: on a **single-form** shortcut containing `ctrl` (e.g. `{ modifiers: ["ctrl","shift"], key: "c" }`), `prefer-common-shortcut` matches against *either* platform's binding (`macMatch || winMatch`) and will rewrite it to `Common.Copy`, committing you to that member's macOS binding too. Note that such a shortcut *also* trips `no-ambiguous-platform-shortcut` ("provide platform-specific shortcuts") — and `--fix` makes that warning disappear without you ever answering it. If you see the ambiguity warning, **resolve it yourself; don't let `--fix` decide.**
+**The one real `--fix` hazard** — narrow, and only on cross-platform extensions. `no-ambiguous-platform-shortcut` fires when `package.json` `platforms` has >1 entry AND a **single-form** shortcut carries **exactly one of `cmd` or `ctrl`** (`(hasCmd || hasCtrl) && !(hasCmd && hasCtrl)`) — so a bare `{cmd+s}` trips it just as `{ctrl+shift+c}` does. It's telling you *you* must declare both platforms.
+
+But `prefer-common-shortcut` matches a single-form shortcut against *either* platform's binding (`macMatch || winMatch`), so `--fix` rewrites it to the `Common` constant — adopting that member's **other**-platform binding too, a choice you never made — and **the ambiguity warning silently disappears with it.** If you see that warning, **answer it yourself; don't let `--fix` answer it for you.**
 
 **Practical rule for the audit-fix flow:** do the `Common` remap by semantics, by hand (per the contract below), checking each combo against the table. Run `ray lint` (no `--fix`) to check. If `--fix` did run, `git diff` the action files — not because it corrupts them, but because a green result tells you nothing about collisions.
 
