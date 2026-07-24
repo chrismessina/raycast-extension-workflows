@@ -1,6 +1,7 @@
 ---
 title: "Reading Reddit programmatically in 2026: use the Atom (RSS) feed, not the JSON API or OAuth"
 date: 2026-07-23
+last_updated: 2026-07-23
 category: tooling-decisions
 module: RedditApi
 component: reddit-search
@@ -10,6 +11,7 @@ applies_when:
   - "An existing Reddit integration started returning HTTP 403 with a large HTML challenge page from www.reddit.com/*.json, old.reddit.com/*.json, or api.reddit.com"
   - "Evaluating whether unauthenticated oauth.reddit.com or self-service OAuth credentials are a viable path (they are not, as of Nov 2025)"
   - "Designing rate-limit handling against Reddit's ~1 request/minute/IP RSS budget using x-ratelimit-remaining / x-ratelimit-reset headers"
+  - "Sharing a rate-limit cooldown across multiple independent client processes (e.g. Raycast commands) that each hold their own reactive state"
 tags:
   - reddit
   - rss
@@ -19,6 +21,8 @@ tags:
   - api-access
   - raycast
   - responsible-builder-policy
+  - concurrency
+  - cross-process-state
   - "http-403"
   - "http-429"
 ---
@@ -174,9 +178,11 @@ async function fetchWithRateGuard(url, headers) {
 
   // CRITICAL: even a 200 can report remaining: 0. Arm the cooldown NOW,
   // off the success headers, so the NEXT request doesn't earn the 429.
-  const remaining = Number(res.headers.get("x-ratelimit-remaining"));
+  // And a MISSING header is "unknown", which must count as spent — see below.
+  const remainingRaw = res.headers.get("x-ratelimit-remaining");
+  const remaining = remainingRaw == null || remainingRaw.trim() === "" ? undefined : Number(remainingRaw);
   const reset = Number(res.headers.get("x-ratelimit-reset")) || 60;
-  if (!Number.isNaN(remaining) && remaining < 1) {
+  if (remaining === undefined || remaining < 1) {
     scheduleCooldown(reset); // measured live: remaining:0, reset:42 on a 200
   }
 
@@ -185,6 +191,36 @@ async function fetchWithRateGuard(url, headers) {
 ```
 
 The load-bearing line is arming the cooldown on the `200`. Without it, the guard engages one request too late and the next call takes the `429` it existed to prevent.
+
+**A missing budget header is "unknown", and unknown must count as spent — not as full.** `Number(null)` and `Number("")` are both `0`, so `Number(header)` collapses "absent" and "zero" into the same value; picking either as a numeric default is wrong in one direction (default-to-0 arms a spurious cooldown on every header-less response; default-to-full lets the next request 429). Model the absence explicitly (`number | undefined`) and treat `undefined` as spent: at ~1 req/min a completed request has probably used the window, and holding is the safe default because a *cached* read still works during the cooldown — only a genuine network call is gated.
+
+## Sharing one cooldown across independent client processes
+
+This is the part that took four review rounds to get right, and the lesson generalizes past Reddit: **when several independent processes must honor one shared limit, the send/block decision has to read shared, authoritative state *synchronously at the moment of the request* — reactive per-process state cannot be trusted for it.**
+
+The setting: a Raycast extension is several **commands**, and each command runs as its **own OS process**. A per-IP rate limit is shared across all of them, so a cooldown armed by one command must gate the others. Each wrong turn below looked correct and failed on the next reviewer pass:
+
+1. **Module-level variable.** A `let deadline` in the shared module is per-process memory — command B never sees command A's write. Fails immediately across commands.
+
+2. **`useCachedState` (shared disk cache + reactive state).** The value now persists across processes, but the cache's change notifications are **in-process only**: a write in A's process does not wake a hook instance in B's already-open process. B keeps deriving its gate from a stale reactive value.
+
+3. **Polling the shared cache on an interval.** B now re-reads the cache every ~1s and catches A's write — but there is still a **~1s window**: between A writing the deadline and B's next tick, B's reactive `isCoolingDown` is stale, and a request submitted in that window sails through into a 429. Raising the poll frequency shrinks the window but never closes it; the race is structural, not a tuning problem.
+
+4. **Synchronous read at the decision point (the fix).** Keep the poll for the *countdown display* (a ~1s lag there is harmless), but gate the actual send/block decision on a function that reads the shared deadline **synchronously, at call time** — `isCoolingDownNow()` rather than the reactive `isCoolingDown`. There is now no interval between "is it safe?" and "send", so no concurrent write can be missed.
+
+```js
+// Shared, authoritative, synchronous — used ONLY for the send/block decision.
+function isCoolingDownNow() {
+  return remainingSeconds(readDeadlineFromSharedCache()) > 0;
+}
+
+// In every request path:
+if (!cached && isCoolingDownNow()) return; // gate on the fresh read, not reactive state
+```
+
+The residual race is irreducible without a cross-process lock (which this platform does not offer): two processes could each run `isCoolingDownNow()` and both send in the same instant *before either writes the deadline* — but only on the very first request of a fresh window, a window microseconds wide versus the ~1s the poll left open. Name it rather than claim perfection.
+
+**The transferable rule:** reactive framework state (React state, `useCachedState`, any subscribe-based store) is for *rendering*. For a *correctness gate* shared across processes, read the shared source of truth synchronously at the decision point. Display can lag; the gate cannot.
 
 ## Related
 
