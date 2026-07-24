@@ -13,6 +13,34 @@ Chris's personal conventions for every Raycast extension — the "third category
 
 `develop`'s **house-style audit fix** (the `npm audit fix` twin) reads `[build]`/`[both]`/`[lint]` entries and brings existing code into conformance — mechanically where the rule is a clear rewrite (`[lint]`/most `[both]`), and as a **judgment call** where the `[build]` entry is a recommendation rather than a mandate (it says so in the rule). `ship`'s **house-style audit** (the `npm audit` twin) reads `[verify]`/`[both]` entries and reports/asserts — read-only. Anything it finds that needs code → hand to `develop`.
 
+### Why these rules don't live in Prettier
+
+A recurring question: can these be enforced via `.prettierrc` for determinism?
+Mostly **no** — the layers don't overlap:
+
+- **Prettier** only reshapes what it can derive from the AST with no notion of
+  *meaning*: quotes, semicolons, width, indentation, trailing commas. **Zero**
+  house-style rules are pure formatting.
+- **ESLint** is where semantic rules belong — "no `any`", "no hand-defined
+  `Preferences`", the `instanceof Error` ternary. That's what the `[lint]` tag means:
+  the rule's durable home is a lint rule, and the audit is only the backstop for forks
+  that don't carry it yet. The fleet's `@raycast/eslint-config` is the shared base.
+- **The house-style audit** (`develop`/`ship`) covers the rest — relationships Prettier
+  and off-the-shelf ESLint can't see (Copy-Error toast pairing, `canAccess(AI)` gating,
+  `supportPath`-is-internal).
+
+**`.prettierrc` convention.** Extensions use the Raycast-scaffold standard
+`{"printWidth": 120, "singleQuote": false}` — keep it identical across the fleet
+(this repo's own config deliberately differs: it's docs/YAML, not extension TS, and
+excludes Markdown so hand-authored prose isn't reflowed).
+
+**Import ordering** is the one formatting-shaped candidate. It's *not* a rule (adoption
+was too split — see [Still to enumerate](#still-to-enumerate)), but it can be made
+deterministic with `@ianvs/prettier-plugin-sort-imports`. Piloted on `reader`
+(2026-07-24): sorts cleanly, `tsc` + `ray lint` both pass (Raycast's bundled Prettier
+accepts the reordered output), ~27/42 files reflow one-time. Viable if promoted; left
+opt-in for now.
+
 ---
 
 ## Prohibitions
@@ -128,6 +156,63 @@ defect, not a style nit.
   collapsed newlines), and (b) flag any error `Detail` that doesn't use the `# Error`
   heading form. Overall description *length* is a `[build]` judgment, not a hard audit
   assertion.
+
+### `[build]` Toggle copy states the resulting direction (on/off), never a bare "Toggled"
+
+When a command **toggles** a setting, the success copy must say **which way it went** —
+the resulting state — not merely that a toggle happened. "Toggled" (or a bare status
+adjective like "Not Floating") makes the user open the app to find out what they just
+did, which defeats the point of the command.
+
+- **State the result as on/off (or the equivalent named state):** `"Microphone Input
+  On"` / `"Microphone Input Off"`, `"Desktop Widgets Floating: On"` / `"…: Off"`,
+  `"Audio Input Lock On"` / `"Audio Input Lock Off"`. A multi-value setting names the
+  resulting value instead (`"Spatial Audio: Fixed"`). All five are real airbuddy toggle
+  toasts (`raycast-airbuddy/src/toggle-*.ts`).
+- **Read the real post-state when the API exposes it.** Prefer reading the setting's
+  actual value after the toggle (poll the readable property) over assuming the direction
+  from a locally-tracked "was it on before" guess — a guess silently desyncs if the
+  setting is changed from the app's own UI between calls.
+- **When the direction is genuinely unknowable** (no readable property anywhere in the
+  API, and no reliable local state), do **not** fabricate a direction — say so, and
+  point the user at where to confirm (`message: "Check <app> to confirm the current
+  state."`). Honesty beats a lie that reads as certainty. *(This was airbuddy's stopgap
+  for `toggle desktop widgets` / `toggle audio input lock` before AirBuddy 913 added
+  readable `desktopWidgetsFloating` / `audioInputLockEnabled` properties — once the
+  property existed, the toasts were upgraded to name the real state.)*
+- **The defect this closes:** a "Desktop Widgets Not Floating" toast (airbuddy, pre-fix)
+  reads as a passive status label, ambiguous about whether the command succeeded or what
+  it changed. Naming the direction as a result (`Floating: Off`) resolves it.
+- **Audit:** `[build]` judgment — grep success-toast titles on `toggle-*` commands for a
+  bare `"Toggled"` / `"… Toggled"` with no on/off or named result, and flag it. Not a
+  hard `[verify]` assertion (the "genuinely unknowable" carve-out is a judgment call).
+
+### `[build]` Count-bearing copy uses correct singular/plural agreement — never `item(s)`
+
+Any user-facing string that interpolates a count must agree grammatically with that
+count across **all three** cases: zero, one, and many. `"1 items"` and `"No devices
+found"` sitting next to `"3 device found"` are defects. The lazy escape hatches —
+`"${n} item(s)"`, `"${n} device(s)"`, always-plural `"${n} items"` — are prohibited in
+copy the **user reads** (they're fine in `logger.*` debug output, which no user sees).
+
+- **The shape:** three-way, e.g. `n === 0 ? "No devices found." : n === 1 ? "1 device
+  found." : \`${n} devices found.\``. A small `pluralize(n, "device")` /
+  `pluralize(n, "match", "matches")` helper is the right factoring once more than a
+  couple of call sites need it — don't hand-inline the ternary five times.
+- **Zero has its own copy.** `"No devices found."` reads better than `"0 devices
+  found."`; use the worded-negative form for the empty case (it also matches the
+  `List.EmptyView` empty-state titles this fleet already writes — `"No Known Devices"`,
+  `"No Headsets Nearby"` in `raycast-airbuddy/src/list-devices.tsx`).
+- **The defects this closes (real fleet):** `raycast-craft/src/tools/add-collection-items.ts:63`
+  (+ `update-`/`delete-collection-items.ts`) render `${input.items.length} item(s)`;
+  `raycast-fathom/src/view-action-items.tsx:71` and `raycast-at-profile/src/history.tsx:188`
+  render an unconditional `${n} items` that says `"1 items"` at count 1. (Terse
+  `List.Section` subtitles are the softest case — but the pattern is fleet-wide and the
+  fix is cheap.)
+- **Audit:** the greppable subset is a `[verify]`-grade check — grep user-facing copy
+  for the literal `(s)` / `(es)` pluralization crutch and for `length}\s*<plural-noun>`
+  templates with no adjacent `=== 1` guard. General agreement across a computed message
+  stays a `[build]` judgment.
 
 ### `[both]` (conditional) Structured logging via `@chrismessina/raycast-logger`
 

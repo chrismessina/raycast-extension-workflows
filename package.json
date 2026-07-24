@@ -1,0 +1,13 @@
+{
+  "name": "raycast-extension-workflows",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chris's Raycast-extension tooling: the raycast-extensions Claude Code plugin + upstream sync workflows. Docs/skills repo, not a Raycast extension.",
+  "scripts": {
+    "format": "prettier --write \"**/*.{yml,yaml,json}\"",
+    "format:check": "prettier --check \"**/*.{yml,yaml,json}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.8.4"
+  }
+}
