@@ -196,7 +196,7 @@ The load-bearing line is arming the cooldown on the `200`. Without it, the guard
 
 ## Sharing one cooldown across independent client processes
 
-This is the part that took four review rounds to get right, and the lesson generalizes past Reddit: **when several independent processes must honor one shared limit, the send/block decision has to read shared, authoritative state *synchronously at the moment of the request* — reactive per-process state cannot be trusted for it.**
+This is the part that took several adversarial review rounds to get right, and the lesson generalizes past Reddit: **when several independent processes must honor one shared limit, the gate has to *reserve* the shared slot — claim it in the same step it checks it — reading authoritative state synchronously at the moment of the request. Reactive per-process state, and even a synchronous *check*, are not enough.**
 
 The setting: a Raycast extension is several **commands**, and each command runs as its **own OS process**. A per-IP rate limit is shared across all of them, so a cooldown armed by one command must gate the others. Each wrong turn below looked correct and failed on the next reviewer pass:
 
@@ -206,23 +206,34 @@ The setting: a Raycast extension is several **commands**, and each command runs 
 
 3. **Polling the shared cache on an interval.** B now re-reads the cache every ~1s and catches A's write — but there is still a **~1s window**: between A writing the deadline and B's next tick, B's reactive `isCoolingDown` is stale, and a request submitted in that window sails through into a 429. Raising the poll frequency shrinks the window but never closes it; the race is structural, not a tuning problem.
 
-4. **Synchronous read at the decision point (the fix).** Keep the poll for the *countdown display* (a ~1s lag there is harmless), but gate the actual send/block decision on a function that reads the shared deadline **synchronously, at call time** — `isCoolingDownNow()` rather than the reactive `isCoolingDown`. There is now no interval between "is it safe?" and "send", so no concurrent write can be missed.
+4. **Synchronous read at the decision point.** Keep the poll for the *countdown display* (a ~1s lag there is harmless), but gate the send/block decision on a function that reads the shared deadline **synchronously, at call time** rather than on the reactive value. This closes the poll window — but it is still a *check*, and a check is not a claim (see 5).
+
+5. **Reserve, don't check (the actual fix).** Checking then sending — even from a fresh synchronous read — lets two commands both read "clear" and both send, each arming the cooldown only *after* its response, so one still 429s. The gate has to **claim the slot in the same step it checks it**: if the window is clear, immediately write a *provisional* hold, so a concurrent caller a moment later reads the claim and is refused. Settle the hold after the response — promote it to the real cooldown if the budget was spent, release it if the budget remained or the request failed before reaching the server (a network error must not strand the window).
 
 ```js
-// Shared, authoritative, synchronous — used ONLY for the send/block decision.
-function isCoolingDownNow() {
-  return remainingSeconds(readDeadlineFromSharedCache()) > 0;
+// Reserve = check-and-claim in one step. Returns an owner token, or null if held.
+function reserveRequestSlot() {
+  if (secondsUntil(readDeadline()) > 0) return null;     // already held
+  const token = mintToken();
+  writeState({ deadline: now() + RESERVATION_MS, provisional: true, token });
+  return token;
 }
-
-// In every request path:
-if (!cached && isCoolingDownNow()) return; // gate on the fresh read, not reactive state
+// After the response: hold if spent, RELEASE if budget remained or the call failed.
+// Release clears only our OWN provisional token — never a confirmed cooldown or
+// another command's reservation.
 ```
 
-The residual race is irreducible without a cross-process lock (which this platform does not offer): two processes could each run `isCoolingDownNow()` and both send in the same instant *before either writes the deadline* — but only on the very first request of a fresh window, a window microseconds wide versus the ~1s the poll left open. Name it rather than claim perfection.
+Two failure modes this exposes, both real bugs a reviewer caught: (a) a **network error** that never reached the server must **release** the reservation, or a transient blip locks the user out for the full window; (b) a **successful** response with budget *remaining* must also release — holding unconditionally over-blocks legitimate back-to-back requests. Tag the stored state `{ provisional, token }` so a release can safely target only the caller's own hold.
 
-**The transferable rule:** reactive framework state (React state, `useCachedState`, any subscribe-based store) is for *rendering*. For a *correctness gate* shared across processes, read the shared source of truth synchronously at the decision point. Display can lag; the gate cannot.
+**Where it bottoms out — name the floor.** Even reservation has an irreducible residual: `reserveRequestSlot` does read-then-write, and the platform's cache has **no atomic compare-and-set** (Raycast `Cache`/`LocalStorage` are plain get/set; no CAS, no lock, no cross-process mutex). Two *exactly*-simultaneous first-requests can both read "clear" before either write lands, and both send. Closing that needs a server-side coordinator — disproportionate for a read-only client, and the blast radius is a single already-handled 429 on the first request of a fresh window. When a reviewer flags this (mine did, twice), the correct answer is **"acknowledged, irreducible on this platform"** — not another round of cache gymnastics. Knowing where the platform's floor is, and stopping there, is part of the skill.
+
+**The transferable rules:**
+- Reactive framework state (React state, `useCachedState`, any subscribe-based store) is for *rendering*. For a *correctness gate* shared across processes, read the shared source of truth synchronously at the decision point. Display can lag; the gate cannot.
+- A shared limiter must **reserve, not check** — claim the slot in the same step you test it, then settle (hold/release) on the outcome. A check-then-act gate always leaves a two-caller race.
+- Without an atomic primitive, a lock-free reservation has a microsecond-wide floor. Fix everything above the floor; document the floor; don't pretend it's gone.
 
 ## Related
 
-- Upstream bug report this explains: [raycast/extensions#28601](https://github.com/raycast/extensions/issues/28601) — "[Reddit Search]" (open), the broken-search report caused by the JSON API block.
-- Fix implementing this guidance: [raycast/extensions#29703](https://github.com/raycast/extensions/pull/29703) — "[Reddit Search] Fix broken search (Reddit blocked the JSON API) + rebuild on RSS" (open as of this writing).
+- Upstream bug report this explains: [raycast/extensions#28601](https://github.com/raycast/extensions/issues/28601) — "[Reddit Search]", the broken-search report caused by the JSON API block.
+- Fix implementing this guidance: [raycast/extensions#29703](https://github.com/raycast/extensions/pull/29703) — the RSS rebuild (merged 2026-07-24).
+- Follow-up fixes from post-merge review: [raycast/extensions#29708](https://github.com/raycast/extensions/pull/29708) — subreddit-browse endpoint, deeplink argument, and the cooldown reservation lifecycle above.
