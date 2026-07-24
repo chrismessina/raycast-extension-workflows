@@ -26,8 +26,11 @@ Run before PR. Each layer is gardening, not engineering:
    - Web-request extensions use `@chrismessina/raycast-logger`.
    - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one (see `reference/keyboard-conventions.md`).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
+   - **Disable the Impeccable design hook first** (`/impeccable hooks off`) so a design false-positive can't masquerade as a house-style violation during this audit — it can't see `@raycast/api` UI (see the *Environment / tooling* rule in `reference/house-style.md`). Confirm `.impeccable/config.json` is gitignored so it never lands in the Store PR.
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
+   - **Screenshot count ≤ 6.** The Store hard-caps `metadata/` screenshots at 6; `ray build`/`ray lint` do NOT flag an over-count, but a reviewer will bounce it. `ls metadata/*.png | wc -l` and trim to the 6 most distinct before submitting.
+   - **README images must live OUTSIDE `metadata/`.** `metadata/` is the Store-listing screenshot folder; a README that embeds `![...](metadata/screenshotN.png)` fails the submission checklist ("assets used by the README are placed outside of the `metadata` folder") and a reviewer will bounce it. Either move the image to a repo-root path or drop the embed. `grep -o 'metadata/[^)]*' README.md` must return nothing. (Hit on reddit-search #29703, 2026-07-23 — caught only at PR time, forcing a re-publish.)
    - **CHANGELOG: add a NEW top entry with `{PR_MERGE_DATE}` for THIS update. Never
      touch entries that already carry a real date.** Raycast CI stamps the
      placeholder on merge; reverting an already-dated older entry (e.g. Initial

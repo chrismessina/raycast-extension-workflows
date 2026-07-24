@@ -128,6 +128,40 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 
 ---
 
+## Environment / tooling
+
+### `[both]` Disable the Impeccable design hook — it is irrelevant to Raycast extensions
+
+The Impeccable **design detector hook** (`/impeccable hooks`) scans edited files for
+rendered-UI defects — broken `<img>`, contrast, gradient text, glow shadows, layout
+rhythm. **A Raycast extension has no rendered HTML/CSS surface** — the UI is declared
+entirely through `@raycast/api` components (`List`, `ActionPanel`, `Detail`), which the
+detector cannot see. So every finding it produces on extension code is a false positive.
+
+The concrete failure (observed 2026-07-23, `reddit-search`): the detector read a
+**server-side Atom-feed parser** — `decodeEntities(rawContent).match(/<img[^>]+src="…"/)`,
+a regex that *extracts* image URLs from feed HTML, plus a JSDoc mentioning `<img>` — as a
+"broken image" and re-fired the `broken-image` finding on **every `Stop` event**, turning
+a shipped, correct extension into a per-turn nag.
+
+**Rule:** on first touch of any Raycast extension repo, disable the hook for that project:
+
+```bash
+node <impeccable-skill-dir>/scripts/hook-admin.mjs off   # writes hook.enabled:false to .impeccable/config.json
+# (or) /impeccable hooks off
+```
+
+`.impeccable/config.json` is machine-local (gitignore it — it must not ship to the Store
+PR). Do NOT reach for per-file/per-rule ignores here: the whole detector is out of scope
+for this codebase, so `off` is the correct blunt instrument, not a scoped `ignore-value`.
+
+- **`develop`:** run this once when you first edit an extension in a session and the hook
+  is firing. It has no bearing on the code; silence it and move on.
+- **`ship`:** ensure the hook is off (or its config gitignored) before the pre-flight, so
+  a stray design finding can't masquerade as a house-style violation during the audit.
+
+---
+
 ## Still to enumerate
 
 Chris has more. Append here as they arrive, tagging each:
