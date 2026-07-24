@@ -2,7 +2,7 @@
 
 Chris's personal conventions for every Raycast extension — the "third category": not a lifecycle *stage*, not a *throughline* constraint, but a standards checklist. Applied at **build time** by `develop` and audited at **pre-flight** by `ship`. Single source of truth, two consumers.
 
-> **IN PROGRESS — Chris is still enumerating.** Append rules as they arrive; keep each tagged.
+> **Living document.** Rules here are earned from Chris's actual fleet, not invented — each cites real fleet evidence: established adoption, a concrete defect it prevents, or a specific gap worth closing (a few are grounded in a gap rather than existing adoption, and say so). Append as new ones prove out; keep each tagged. Emerging-but-not-yet-established candidates are parked in [Still to enumerate](#still-to-enumerate) rather than promoted early.
 
 ## Tags
 
@@ -11,7 +11,7 @@ Chris's personal conventions for every Raycast extension — the "third category
 - **`[both]`** — applied at build *and* audited at ship.
 - **`[lint]`** — *should be an ESLint rule* (enforced on every save via the shared config). The house-style audit is only the **backstop** for forks that don't yet carry the rule — it does not re-implement the linter.
 
-`develop`'s **house-style audit fix** (the `npm audit fix` twin) reads `[build]`/`[both]`/`[lint]` entries and rewrites existing code to conform. `ship`'s **house-style audit** (the `npm audit` twin) reads `[verify]`/`[both]` entries and reports/asserts — read-only. Anything it finds that needs code → hand to `develop`.
+`develop`'s **house-style audit fix** (the `npm audit fix` twin) reads `[build]`/`[both]`/`[lint]` entries and brings existing code into conformance — mechanically where the rule is a clear rewrite (`[lint]`/most `[both]`), and as a **judgment call** where the `[build]` entry is a recommendation rather than a mandate (it says so in the rule). `ship`'s **house-style audit** (the `npm audit` twin) reads `[verify]`/`[both]` entries and reports/asserts — read-only. Anything it finds that needs code → hand to `develop`.
 
 ---
 
@@ -36,6 +36,25 @@ No `as any`, no `: any`.
 
 - **Durable home:** `@typescript-eslint/no-explicit-any` in the shared config.
 - **Audit backstop:** grep `\bas any\b` / `:\s*any\b` for un-linted forks.
+
+### `[lint]` Unwrap unknown catch values with the `instanceof Error` ternary
+
+A `catch` value is `unknown`. Stringify it with the exact guard — never touch
+`error.message` unguarded, and don't spin up a one-off `getErrorMessage` helper:
+
+```ts
+const errorMessage = error instanceof Error ? error.message : String(error);
+```
+
+This is Chris's standard across the fleet (17 of 21 self-authored extensions —
+e.g. `raycast-digger/src/hooks/useFetchSite.ts:42`,
+`raycast-ios-apps/src/ipatool.ts:328`). It pairs directly with the Copy-Error
+toast below, whose `errorMessage` is produced this way.
+
+- **Durable home:** ESLint (`@typescript-eslint/no-unsafe-member-access` catches the
+  unguarded `.message`; a custom rule can enforce the exact ternary).
+- **Audit backstop:** grep `catch (` blocks that reference `.message` without an
+  accompanying `instanceof Error`.
 
 ### `[both]` Typecheck with `tsc --noEmit` — `ray build` does NOT typecheck
 
@@ -70,7 +89,7 @@ When showing `Toast.Style.Failure`, attach a `primaryAction` titled **"Copy Erro
 ```ts
 catch (error) {
   logger.error("Token generation failed", error);
-  const errorMessage = error instanceof Error ? error.message : "Unknown error";
+  const errorMessage = error instanceof Error ? error.message : String(error);
   await showToast({
     style: Toast.Style.Failure,
     title: "Failed to generate token",
@@ -85,11 +104,43 @@ catch (error) {
 }
 ```
 
+### `[both]` Empty/error state copy: short title, one-line description, steps in the actions
+
+`List.EmptyView` (and `Toast`) copy follows one shape: an icon, a short imperative
+title, and a **single-sentence** description. Multi-step guidance goes in the
+`actions`, not the description.
+
+**Why it's a hard rule, not a preference:** `List.EmptyView`'s `description`
+**collapses newlines** — a multi-line string renders as one run-on line. This is
+documented in Chris's own code
+(`raycast-airbuddy/src/components/error-views.tsx:43-44`: *"List.EmptyView's
+`description` collapses newlines — … Keep every description to ONE short line and
+put the steps in the actions."*). A long or multi-line description is therefore a
+defect, not a style nit.
+
+- **Error `Detail` screens** use the heading form `` `# Error\n\n${message}` ``
+  (`raycast-fathom/src/search-meetings.tsx:335`,
+  `raycast-reader/src/views/ArticleReaderView.tsx:120`,
+  `raycast-tesla-energy/src/view-solar-production.tsx:244`), where `message` is the
+  `instanceof Error` string from the prohibition above.
+- **Audit:** two mechanical checks — (a) flag any `List.EmptyView` / `EmptyView`
+  `description` whose string literal contains an explicit `\n` (the objective defect:
+  collapsed newlines), and (b) flag any error `Detail` that doesn't use the `# Error`
+  heading form. Overall description *length* is a `[build]` judgment, not a hard audit
+  assertion.
+
 ### `[both]` (conditional) Structured logging via `@chrismessina/raycast-logger`
 
 **Condition:** the extension makes web requests (grep `fetch` / `axios` / `node-fetch` / `useFetch`).
 
 **If yes:** `@chrismessina/raycast-logger` must be a dependency and imported (the `logger` used in the Copy-Error pattern above). Does **not** apply to extensions with no network calls — the audit must check the condition first, or it mis-fires on offline extensions.
+
+**Corollary — the debug preference name is fixed.** The logger reads
+`getPreferenceValues().verboseLogging` internally, so an extension that adopts it
+**must** expose a preference named **exactly `verboseLogging`**, type `checkbox`.
+This is not a free naming choice — a differently-named toggle silently does nothing.
+(Present in all 7 logger-using extensions: `bookface`, `digger`, `fathom`,
+`ios-apps`, `parallel-web-tools`, `reader`, `tesla-energy`.)
 
 ### `[both]` Keyboard shortcuts: `Common` first, platform-explicit only when cross-platform
 
@@ -125,6 +176,208 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 | macOS + Windows     | No             | `{ macOS: {...}, Windows: {...} }`                    |
 
 **Audit note:** a bare `cmd`-only shortcut is a defect *only if* `platforms` **explicitly includes Windows**. The auditor MUST read `package.json` `platforms` before flagging — and must treat an **absent** `platforms` as macOS-only, not as cross-platform. Skipping this mis-fires on every Mac-only extension *and* on every extension with no `platforms` field, which together are the majority of the fleet.
+
+---
+
+## Raycast `environment` API
+
+Use the platform's `environment` object instead of re-deriving what it already
+knows. The rules below are grounded in real fleet patterns and defects (each names
+the repo that got it right, and where relevant the one that didn't). Reference:
+<https://developers.raycast.com/api-reference/environment>.
+
+### `[both]` Handle no-AI-access on every Raycast-AI call
+
+Any code path that calls `AI.ask` / `useAI` must **degrade gracefully** for a user
+without Raycast AI access (non-Pro, or AI disabled) — never let it surface as an
+unhandled failure. Two acceptable ways:
+- **Gate ahead of time** with `environment.canAccess(AI)` and branch to a non-AI
+  fallback (preferred when there's a real fallback to show).
+- **Catch the thrown no-access error** around the AI call and fall back there.
+
+Either is fine; an *ungated, uncaught* AI call is the defect.
+
+- **Right (copy this):** `raycast-reader/src/hooks/useArticleReader.ts:84` —
+  `const canAccessAI = environment.canAccess(AI);` then
+  `const shouldShowSummary = canAccessAI && preferences.enableAISummary;`, reused
+  before `rewriteArticleTitle` (~:263).
+- **The gap this rule closes:** `raycast-sora/src/utils/videoNaming.ts:44` calls
+  `useAI(...)` unconditionally; a user without AI access gets a failure instead of
+  the truncated-title fallback `getVideoDisplayTitle()` already provides.
+- Same pattern applies to any capability behind `canAccess` (e.g.
+  `BrowserExtension` — `raycast-memory-store/src/lib/background.ts:25`).
+- **Audit:** grep `useAI(` / `AI.ask` and assert **either** a `canAccess(AI)` guard
+  **or** an enclosing try/catch on that path.
+
+### `[both]` Interval-driven commands must branch on `environment.launchType`
+
+A command with an `interval` (a scheduled background refresh — this is what causes
+background ticks; `"mode": "menu-bar"` alone does **not**) runs both on user open
+**and** on the scheduled background wake. Guard user-facing side effects
+(`showToast`, `showHUD`, error UI) behind `environment.launchType`, so a failed
+background refresh (e.g. an expired OAuth token) logs quietly instead of firing the
+same toast path as a manual open:
+
+```ts
+if (environment.launchType === LaunchType.Background) {
+  // log only — no toasts, no HUD
+}
+```
+
+- **The gap:** `raycast-tesla-energy/src/menu-bar-status.tsx` and
+  `raycast-luma/src/luma-menubar.tsx` (both interval-driven) don't guard their
+  fetch/error UI against background invocation. *(Note: `LaunchType` is imported in
+  7 repos but only ever passed **outbound** to `launchCommand()` — no repo yet reads
+  its own `environment.launchType`. This is the blank spot to close.)*
+
+### `[build]` Prefer `updateCommandMetadata` to surface menu-bar status in the command list
+
+When a `menu-bar` command has a meaningful compact status, push it into the
+command's `subtitle` with `updateCommandMetadata({ subtitle })` so the user sees it
+in the root search without opening the menu. This is a *recommendation, not a
+mandate* — a menu-bar command with no meaningful one-line status shouldn't be forced
+to invent one, so it's `[build]` (judgment at build time), not a `[verify]` audit
+assertion that would false-positive on every subtitle-less menu-bar command.
+
+- **The opportunity (0 repos use this yet):** `raycast-tesla-energy/src/menu-bar-status.tsx`
+  already computes a compact status string (`batteryTitle()`/`gridTitle()`, ~:8-18)
+  that is a ready-made `subtitle`; `raycast-luma/src/luma-menubar.tsx` likewise.
+
+### `[both]` `environment.supportPath` is for INTERNAL state only — user files go to a preference dir
+
+`supportPath` is the writable per-extension directory — the right home for caches,
+indexes, and command state the user never opens by hand. (Not `assetsPath`, which is
+the **read-only** path to the extension's *bundled* assets — don't write there.)
+Anything the user is meant to **find in Finder** (exports, downloads, generated
+deliverables) must go to a user-visible directory — an
+`exportDirectory`/`downloadDirectory` preference defaulting to `~/Downloads`.
+
+- **Right:** `raycast-fathom/src/utils/export.ts:36` reads
+  `preferences.exportDirectory` for vCard/member exports.
+- **The gap:** `raycast-fathom/src/actions/TeamMemberActions.tsx:22` writes a
+  user-facing JSON export to `path.join(environment.supportPath, "downloads")` —
+  buried in `~/Library/Application Support/…` where no one will find it. Route it
+  through the same `exportDirectory` preference.
+- **Audit:** flag `environment.supportPath` used to build a path that is then
+  revealed/opened for the user, or handed to `Action.ShowInFinder`.
+
+### `[verify]` Read the active selection via the platform API, never a shell-out
+
+Use the platform functions to read a selection — never an `osascript`/`open`-based
+shell-out:
+- `getSelectedText()` — highlighted text in the frontmost app.
+- `getSelectedFinderItems()` — selected files, **Finder-specific**: it rejects if
+  Finder isn't the frontmost app, so always `await` it in a try/catch (or use it as a
+  guarded fallback, as the fleet does).
+
+Already **universal** in the fleet (no shell-outs found): `getSelectedText` in 5
+repos (`digger`, `google-maps`, `reader`, `trimmy`, `wrap-unwrap`),
+`getSelectedFinderItems` in 2 (`at-profile/src/yaml-settings.ts:282`,
+`trimmy/src/trim-core.ts:91`, both macOS-guarded fallbacks). Codifying the winner so
+a future extension doesn't regress to `osascript`.
+
+- **Audit:** grep for `osascript`/`System Events` reading a selection; prefer the API.
+
+> **Underused — reach for these on the next fitting extension.** These have little
+> or no current adoption and **no** live defect, so they are not rules — but Chris's
+> own read is that the `environment` toolkit is under-embraced, so treat them as
+> first-choice options when the situation fits:
+> - **`environment.appearance`** (`"dark"`/`"light"`) — used in exactly one place
+>   (`tesla-energy`'s SVG chart, `view-solar-production.tsx:95`). The pattern to reuse
+>   whenever an extension renders **custom graphics** (SVG/canvas) whose colors must
+>   track the theme. (Component `tintColor`s should still use the theme-safe `Color.*`
+>   enum, not this.)
+> - **`environment.textSize`** (`"medium"`/`"large"`) — 0 repos. A natural first try
+>   on a long-form `Detail`/Markdown extension like `reader`.
+> - **`environment.isDevelopment`** — 0 repos. Gate dev-only debug UI behind it
+>   (today debug output is gated on the `verboseLogging` preference instead — fine,
+>   but `isDevelopment` is the idiomatic switch for *dev-only* affordances).
+
+---
+
+## Project structure
+
+### `[build]` Organize `src/` into role folders once a command file grows past ~150 lines
+
+Every self-authored extension beyond a handful of files splits `src/` into a subset
+of these role folders — the convention is which name means what:
+
+- **`hooks/`** — React state hooks, each file/​export prefixed `use*`.
+- **`utils/`** — business logic / pure helpers. (Older/smaller repos used `lib/`;
+  new work uses `utils/`.)
+- **`types/`** — shared type declarations.
+- **`components/`** — small reusable UI widgets.
+- **`views/`** — full-screen sub-views (a whole `List`/`Detail` screen), distinct
+  from `components/`.
+- **`actions/`** — standalone `ActionPanel`/`Action` builders.
+
+Evidence: `raycast-digger/src/{types,utils,components,hooks,actions}`,
+`raycast-fathom/src/{tools,types,utils,components,hooks,actions,views}`,
+`raycast-threads-client/src/{types,utils,hooks,actions,views}`. Not a single grep,
+but the split (and the `views/` vs `components/` distinction) is the house shape —
+don't pile everything into one command file, and don't invent parallel names
+(`helpers/`, `lib/` in new work).
+
+---
+
+## README
+
+### `[verify]` Original extensions open with the social-badge preamble
+
+Every **self-authored** extension's `README.md` starts with the title, then the
+centered badge block (Follow / Stars / Raycast Store), then the one-line tagline —
+adapted per extension. (Applies to `chrismessina`-authored extensions; do **not**
+impose it on forks you contribute upstream.)
+
+```markdown
+# <Extension Name>
+
+<div align="center">
+  <a href="https://github.com/chrismessina">
+    <img src="https://img.shields.io/github/followers/chrismessina?label=Follow%20chrismessina&style=social" alt="Follow @chrismessina">
+  </a>
+  <a href="https://github.com/chrismessina/<repo>/stargazers">
+    <img src="https://img.shields.io/github/stars/chrismessina/<repo>?style=social" alt="Stars">
+  </a>
+  <a href="https://www.raycast.com/chrismessina/<store-slug>">
+    <img src="https://img.shields.io/badge/Raycast-Store-red.svg" alt="<Extension Name> on Raycast store.">
+  </a>
+</div>
+
+<one-line tagline>
+```
+
+**Two substitutions, and the second is a trap:**
+- `<repo>` (stars badge, ×2) = the **full** standalone repo name, e.g. `raycast-reader`
+  (the `raycast-` prefix is part of `<repo>`, not the template — don't double it).
+- `<store-slug>` (Store badge) = the extension's **`package.json` `name`**, which is
+  the Store slug — **not** the repo name. Canonical mismatch: repo `raycast-reader`
+  has `name: "reader-mode"`, so the badge URL is
+  `raycast.com/chrismessina/reader-mode`. Using `raycast-reader` there 404s. (The
+  slug is always `package.json` `name`; when that also differs from the *monorepo
+  directory*, the sync layer's `UPSTREAM_EXT_DIR` handles that separate mapping — but
+  the badge only ever cares about `name`.)
+
+- **Reference:** `chrismessina/raycast-reader`'s README.
+- **Audit:** self-authored repo whose `README.md` lacks the `<div align="center">`
+  badge block, or whose Store badge URL doesn't resolve to a live Store page.
+
+---
+
+## Changelog
+
+### `[verify]` Never hand-invent a merge date — keep the `{PR_MERGE_DATE}` placeholder
+
+The newest, unreleased CHANGELOG entry keeps Raycast's literal `{PR_MERGE_DATE}`
+token; Raycast substitutes the real date when the Store PR merges. Do **not** guess
+a date before merge. Entries follow `## [<Title>] - {PR_MERGE_DATE}` under a
+`# <Name> Changelog` header. Universal across all 21 self-authored CHANGELOGs
+(merged entries correctly show a real date, e.g. `raycast-bookface: ## […] -
+2026-06-23`; only the unreleased entry carries the token).
+
+- **Audit:** `grep -c '{PR_MERGE_DATE}' CHANGELOG.md` — expect it only on the newest
+  unreleased entry, never on an already-shipped one, and never a real date on an
+  unmerged entry.
 
 ---
 
@@ -164,6 +417,27 @@ for this codebase, so `off` is the correct blunt instrument, not a scoped `ignor
 
 ## Still to enumerate
 
-Chris has more. Append here as they arrive, tagging each:
+Candidates that showed up in a fleet audit (2026-07-23) but are **not yet rules** —
+either emerging (adopted only in recent work) or too split to codify. Parked here so
+they aren't re-discovered from scratch; promote one when it earns it.
 
-- _(pending)_
+- **Conventional Commits** (`feat:`/`fix:`/`chore:`/…). Near-100% in recent repos
+  (`airbuddy` 40/40, `wrap-unwrap` 39/39) but **zero** in older ones (`digger`,
+  `bookface`, `google-maps`, `fetch`, `at-profile`). A habit adopted mid-2026, not a
+  standing convention — and a commit convention, not strictly extension house-style.
+  Promote when it's the norm across a fresh audit.
+- **Real unit-test suites** (`*.test.ts`). Only 4/21 (`happenstance`, `memory-store`,
+  `reader`, `wrap-unwrap`). Emerging practice; too sparse to mandate.
+- **Explicit `throttle` on live-search `List`s.** Chris sets it deliberately where a
+  command does per-keystroke remote fetching (`google-maps`, `memory-store`,
+  `ios-apps` on; `parallel-web-tools` off-with-intent) but many search commands omit
+  it. Closer to a per-command correctness call than a blanket rule.
+- **Default icon filename `extension-icon.png`.** ~10/21 use it, ~11/21 use a
+  brand-specific name — a coin flip, not a convention. Not codified.
+- **`@raycast/api` import ordering.** 35–85% adherence and no `import/order` /
+  `simple-import-sort` configured anywhere. Would need tooling first; not enforced.
+
+**Rejected outright** (checked, no real pattern): `ActionPanel.Section` usage ratio;
+`showFailureToast` vs manual Failure toast (manual dominates — already covered by the
+Copy-Error rule); `useCachedPromise`/`usePromise` vs manual loading state (even split);
+`export default function Command()` naming (mixed).
