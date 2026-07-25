@@ -468,6 +468,74 @@ a date before merge. Entries follow `## [<Title>] - {PR_MERGE_DATE}` under a
 
 ## Environment / tooling
 
+### `[both]` Run every `ray`/`npm` command from the extension root, never a parent
+
+`npm install`, `npm run dev`, `npm run publish`, and `npx ray develop|build|lint` resolve the
+manifest by **walking up from your current directory to the nearest `package.json`** — not by
+finding "the extension." Run one from the wrong place and you either get an npm-flavored error
+that blames tooling instead of your path, or — worse — you silently operate on a *different*
+package.
+
+**Measured on this machine, 2026-07-24** (`raycast-wrap-unwrap`, git 2.50.1, npm/npx; `ray` is
+*not* on `PATH` — extensions invoke it via `npx` or an npm script, so always write `npx ray …`):
+
+| Where you run it | `npm run dev` | `npx ray lint` / `npx ray build` |
+|---|---|---|
+| Extension root | ✅ works (`ray develop` starts) | ✅ works, exit 0 |
+| **Subdirectory** of the extension (e.g. `src/`) | ✅ works — npm walks *up* to the nearest `package.json` | ✅ works |
+| Parent with **no** `package.json` above it | ❌ `npm error code ENOENT … path …/package.json` | ❌ `npm error could not determine executable to run` |
+| Parent that **has** its own `package.json` | 🚨 **silently runs the PARENT's script, exit 0** | ❌ `could not determine executable to run` |
+
+**The last row is the dangerous one, and it's why this rule exists.** npm does not resolve "the
+extension" — it walks *upward* to the nearest ancestor `package.json` and uses whatever it finds.
+Verified with a decoy `{"name":"PARENT-DECOY","scripts":{"dev":"echo RAN_PARENT_SCRIPT"}}` one
+level up: `npm run dev` printed `RAN_PARENT_SCRIPT` and **exited 0 with no error at all.** So the
+failure is not reliably a clean error — it can be the *wrong package* quietly running or
+installing. This repo (`raycast-extension-workflows`) is exactly such an ancestor: a
+`package.json` with `format` scripts and no extension in it.
+
+When you *do* get an error, it **names npm and never Raycast** — nothing says "manifest" — so it
+reads like a broken install and sends you debugging a dependency. (`npx ray …` is the more
+confusing: "could not determine executable to run" sounds like `ray` isn't installed.)
+
+**So never rely on an error to tell you you're in the wrong directory.** Resolve the root
+explicitly (below) and `cd` there before running anything.
+
+The extension root is the directory holding the `package.json` **that carries Raycast keys**
+(`commands`, `title`, `icon`) — not merely any `package.json`. That distinction is the whole
+rule, because the fleet has **two topologies** and only one of them puts the root at the repo root:
+
+| Topology | Repo root | Extension root |
+|---|---|---|
+| Standalone mirror (`chrismessina/raycast-<name>`) | = extension root | the repo root itself |
+| Monorepo (`raycast/extensions`, incl. sparse checkouts and PR-review forks) | monorepo root | `extensions/<name>/` |
+
+**The trap is the second row.** After a sparse checkout or a PR-review fetch you are sitting
+in the monorepo root with exactly one extension materialized under `extensions/<name>/` — it
+*feels* like the project root, and the error blames tooling instead of the path. This repo's own
+`raycast-extension-workflows` root is a third false root, and the worst kind: it has a
+`package.json` (Prettier/format scripts only) with **no extension in it**, so npm's upward walk
+finds it and runs *that* instead of erroring.
+
+**Resolve the root explicitly before running anything** — don't infer it from where the shell
+happens to be:
+
+```bash
+# From anywhere in the tree: find the package.json holding a real Raycast `commands` ARRAY.
+# Testing `.commands` alone is too loose — `{"commands":"anything-truthy"}` passes `jq -e`
+# and would misidentify the root (verified 2026-07-24).
+find . -name package.json -not -path '*/node_modules/*' \
+  -exec sh -c 'jq -e "(.commands|type==\"array\") and (.commands|length>0)" "$1" >/dev/null 2>&1 && dirname "$1"' _ {} \;
+```
+
+Ambiguous result (several matches) → ask which extension, don't guess. Then `cd` there and
+stay there for the whole build/lint/dev cycle.
+
+- **`develop`:** `cd` to the resolved root before the first command; keep the dev loop there.
+- **`ship`:** every pre-flight gate (`tsc --noEmit`, `npm run build`, `npm run lint`) and
+  `npm run publish` runs from that same root. A gate that "passed" from the wrong directory
+  did not run.
+
 ### `[both]` Disable the Impeccable design hook — it is irrelevant to Raycast extensions
 
 The Impeccable **design detector hook** (`/impeccable hooks`) scans edited files for

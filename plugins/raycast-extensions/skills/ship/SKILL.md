@@ -9,6 +9,10 @@ metadata:
 
 ## The seam: `ship` never changes code behavior
 
+> **Reviewing someone else's PR is not this skill.** `ship` submits *your* extension and drives
+> feedback *on* it. A PR authored by a contributor against an extension you help maintain is
+> the inbound direction — [`review-pr`](../review-pr/SKILL.md).
+
 `ship` runs *non-breaking* dep hygiene, the *read-only* house-style audit, weeds metadata, gates compliance, submits, and cleans up. The moment a code change is needed (a failing house-style audit, or Store review feedback that needs code), it **hands back to `develop`** with context, then receives the change forward again. The arrow is two-way.
 
 ## Pre-flight checklist (the "cake")

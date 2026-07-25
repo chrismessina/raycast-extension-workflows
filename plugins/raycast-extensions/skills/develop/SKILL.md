@@ -29,6 +29,58 @@ All three change code, so they all live here and all hand forward to `ship` when
 
 ---
 
+## Before the first edit — locate, then branch
+
+Two steps, in this order, for all three intents. Neither is an interview: the brief already
+says what to build. These only establish *where* and *on what ref*.
+
+1. **Resolve the extension root and `cd` there.** The directory whose `package.json` carries
+   Raycast keys (`commands`, `title`, `icon`) — which is the repo root for a standalone
+   mirror but `extensions/<name>/` for anything monorepo-derived. Run a `ray`/`npm` command
+   from *above* the extension and it fails with `npm error code ENOENT … package.json` (or
+   `could not determine executable to run` via `npx`) — errors that name npm, never Raycast,
+   so they read like a broken install rather than a wrong `cd`. Being one level *too deep*
+   (e.g. in `src/`) is harmless: npm walks upward. Resolver one-liner and
+   the measured behavior table: the `[both]` extension-root entry in
+   [`../../reference/house-style.md`](../../reference/house-style.md) (*Environment / tooling*).
+   Several matches → ask which extension. Don't guess.
+
+2. **Read the tree state, then branch — but only with permission to touch refs.**
+
+   **Look first, always:**
+
+   ```bash
+   git status --short && git branch --show-current
+   ```
+
+   Chris works in a **permanently dirty tree and his uncommitted edits are sacred.** So:
+
+   - **Dirty tree → do NOT run any ref-mutating command. Report and ask.** Show him the
+     `git status --short` output and ask whether to branch (carrying the edits along) or stay
+     put. Uncommitted work plus an unrequested `git switch`/`pull` is how a hunk dies.
+   - **Clean tree, and he asked for a branch → `git switch -c <prefix>/<slug>`.** That is the
+     *only* ref command this step authorizes.
+   - **Never `git add`, `commit`, `stash`, `checkout <path>`, `reset`, or `pull` to "clean up"
+     first** — not even to make branching succeed. Not one of these is ever implied by "add a
+     feature."
+   - **`git fetch` is safe** (it writes only remote-tracking refs); `git pull`/`merge`/`rebase`
+     are not — they touch the working tree. Fetch freely, integrate only when asked.
+   - **No instruction either way?** Work on the current branch and say so in your report.
+     Branching is cheap to add later; a lost edit is not recoverable.
+
+   | Prefix | Use |
+   |---|---|
+   | `feature/` | new capability |
+   | `fix/` | bug fix |
+   | `chore/` | deps, tooling, refactor-only |
+
+**What this step is NOT:** it is not a requirements interview. If the ask genuinely needs
+shaping before code, that's `superpowers:brainstorming` — invoke it and come back. If the
+brief is already concrete (the normal case), resolve the root, branch, and build the bullet
+list as written.
+
+---
+
 ## Intent 1 — Feature / refactor
 
 Ordinary code work. The only non-default obligation: **write to House Style as you go.** Don't add a failure toast without a Copy-Error action; don't add an `Action` with an ad-hoc shortcut where a `Keyboard.Shortcut.Common` fits. See House Style below — applying it inline is cheaper than letting `ship`'s audit bounce it back.
@@ -72,6 +124,43 @@ The retrofit pass: take an extension that works (a fork you're contributing to, 
 
 ---
 
+## After the change — run it in Raycast, don't just build it
+
+**The static gates are necessary and not sufficient.** `tsc --noEmit`, `ray build`, and
+`ray lint` prove the code compiles and lints. They prove **nothing** about whether the feature
+works, and they cannot see the states where Chris's nits actually live — a blurry empty-state
+label, a spinner that never resolves, a cut-off toolbar, an action that fires on an item whose
+file was never written. Reporting "builds clean" as if it were "works" is how QA gets
+outsourced back to him, and it comes back as a numbered list.
+
+**So load it and exercise it before reporting.** From the extension root:
+
+```bash
+npm run dev        # or `ray develop` — whichever the repo defines
+```
+
+Confirm it appears in Raycast, then walk the states, not just the happy path:
+
+- **Empty** — zero results / no data yet. Is the copy specific, and does it say what to *do*?
+  (See the `[both]` empty/error-state rule in [`../../reference/house-style.md`](../../reference/house-style.md).)
+- **Loading** — does `isLoading` actually resolve on the failure branch too? A `.catch` that
+  toasts without dismissing wedges the view on a permanent spinner.
+- **Error** — force the failure (kill the network, bad token, empty input). Does the toast
+  carry its Copy-Error action?
+- **Filtered / narrow window** — type a query that matches nothing; shrink the window.
+  Truncation and alignment defects only appear here.
+- **The ActionPanel as resolved** — open it and read the shortcuts on screen. This is the only
+  way to assert the no-collision invariant; `ray lint` does not check it (see the callout above).
+
+Then stop the dev process before handing off (a running `ray develop` holds the extension in a
+dev state in Raycast).
+
+**Report what you actually observed** — the command run and what happened. `tsc` exit 0 plus
+"I walked the empty and error states, empty state reads X" is a report. "Should work" is not,
+and neither is a green build alone. Where a step genuinely needs Chris's hands (a real account,
+a device, a paid API), say exactly that and hand him the steps with real paths rather than
+asserting it passed.
+
 ## House Style (applies to all three intents)
 
 Every code change here must conform to House Style. The canonical, tagged checklist is [`../../reference/house-style.md`](../../reference/house-style.md). Highlights you'll hit constantly:
@@ -87,10 +176,19 @@ Every code change here must conform to House Style. The canonical, tagged checkl
 
 ## Hands off
 
-→ `ship` when the change is done and builds clean. `ship` runs the read-only house-style audit, dep hygiene, weeding, compliance, PR, and cleanup. If it bounces back with code-level feedback, you're up again.
+→ `ship` when the change is done, builds clean, **and has been exercised in Raycast** (see the dev-loop section — a green build is not a working feature). `ship` runs the read-only house-style audit, dep hygiene, weeding, compliance, PR, and cleanup. If it bounces back with code-level feedback, you're up again.
+
+← `review-pr` when a *contributor's* PR needs code changes, or when reviewing one surfaces a defect in your own extension. Reviewing someone else's submission is [`review-pr`](../review-pr/SKILL.md); changing code is here.
 
 ## Gotchas
 
+- **A green build is not a working feature.** `tsc`/`ray build`/`ray lint` cannot see empty
+  states, spinners, toasts, or resolved ActionPanels. Run the dev loop and walk those states
+  before handing to `ship` — otherwise the nits come back as a numbered list.
+- **The extension root is not always the repo root.** Standalone mirror: repo root. Anything
+  monorepo-derived: `extensions/<name>/`. Running from a *parent* yields `npm error code ENOENT`
+  or `could not determine executable to run` — npm-flavored errors that misdirect you into
+  debugging a dependency. (A *sub*directory like `src/` is fine; npm walks up.)
 - **Don't conflate hygiene with migration.** "Update my deps" is ambiguous — non-breaking refresh is `ship`; a major migration is here. If unsure which the user means, ask before bumping.
 - **A semantic shortcut remap can introduce a conflict.** Always re-verify the ActionPanel conflict invariant *after* rewriting, not just before.
 - **The fix for one review finding can create the next.** A readiness gate added to fix a race (e.g. "Quick Look points at a file that isn't rendered yet") is exactly how a permanent-spinner bug gets in: the gate's `.catch` forgets to dismiss. When you add a gate, an early return, or a guard to satisfy a reviewer, walk *its own* failure/empty path before moving on — the second-order bug won't be in the diff the reviewer looked at. (Observed on cursors #29493: the Quick Look race fix wedged the grid on WASM-load failure.)

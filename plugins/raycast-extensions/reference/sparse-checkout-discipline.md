@@ -79,17 +79,41 @@ baseline; reconcile before syncing anything.**
 
 ## Refreshing an existing sparse checkout
 
-Don't re-clone. Pull upstream into the existing sparse tree:
+Don't re-clone. Pull upstream into the existing sparse tree — **but `reset --hard` destroys
+uncommitted work, so prove the tree is clean first and abort if it isn't:**
 
 ```bash
+# Refuse to touch the working tree if anything is uncommitted.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "ABORT: working tree is dirty — reset --hard would destroy these edits:"
+  git status --short
+  exit 1
+fi
+
 git fetch origin main
 git checkout main && git reset --hard origin/main
 ```
+
+**Never run the `reset --hard` on a dirty tree to "get back to a known state."** If the checkout
+has local edits you didn't expect, that is information — report it and stop. This applies even
+though a sparse *review/verification* clone is usually disposable: the one time it isn't, the
+edits are unrecoverable. Cheapest safe alternative is a fresh clone in a new directory.
 
 The sparse config persists across fetches — you stay scoped to `extensions/<name>`.
 
 ## Gotchas
 
+- **A sparse checkout leaves you in the WRONG directory to run anything.** This procedure
+  drops you in `monorepo/` with one extension materialized at `extensions/<name>/`. That
+  monorepo root looks like the project root and is not: `npm install`, `npm run dev`, and
+  `npx ray build`/`ray lint` all fail here with `npm error code ENOENT … package.json` or
+  `could not determine executable to run` — npm-flavored errors that blame a dependency, not
+  your path (the `npx` one reads as if `ray` were missing entirely). The
+  sparse checkout is precisely what makes this misleading, because the tree is *almost*
+  empty, so "the repo root" and "the extension" feel like the same place.
+  **`cd extensions/<name>` first, then run.** See the `[both]` extension-root rule in
+  [`house-style.md`](./house-style.md) (*Environment / tooling*) for the general invariant
+  and the resolver one-liner.
 - **`git sparse-checkout set` REPLACES the path list; it does not append.** Setting a
   second extension drops the first. To hold two, pass both in one call:
   `git sparse-checkout set extensions/a extensions/b`.
