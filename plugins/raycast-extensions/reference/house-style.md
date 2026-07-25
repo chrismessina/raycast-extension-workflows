@@ -196,9 +196,11 @@ found"` sitting next to `"3 device found"` are defects. The lazy escape hatches 
 copy the **user reads** (they're fine in `logger.*` debug output, which no user sees).
 
 - **The shape:** three-way, e.g. `n === 0 ? "No devices found." : n === 1 ? "1 device
-  found." : \`${n} devices found.\``. A small `pluralize(n, "device")` /
-  `pluralize(n, "match", "matches")` helper is the right factoring once more than a
-  couple of call sites need it — don't hand-inline the ternary five times.
+  found." : \`${n} devices found.\``. Don't hand-inline that ternary five times — **this
+  helper now exists** as `countOf(n, "device")` / `countOf(n, "match")` in
+  `@chrismessina/raycast-kit` (see the conditional kit rule below). It handles the
+  irregulars the hand-rolled version got wrong (`match`→`matches`, `city`→`cities`,
+  `person`→`people`, `series`→`series`) and thousands separators.
 - **Zero has its own copy.** `"No devices found."` reads better than `"0 devices
   found."`; use the worded-negative form for the empty case (it also matches the
   `List.EmptyView` empty-state titles this fleet already writes — `"No Known Devices"`,
@@ -226,6 +228,81 @@ copy the **user reads** (they're fine in `logger.*` debug output, which no user 
 This is not a free naming choice — a differently-named toggle silently does nothing.
 (Present in all 7 logger-using extensions: `bookface`, `digger`, `fathom`,
 `ios-apps`, `parallel-web-tools`, `reader`, `tesla-energy`.)
+
+### `[both]` (conditional) Prefer `@chrismessina/raycast-kit` for failure toasts and count copy
+
+**Condition — all three must hold:**
+
+1. The extension is **self-authored** (`package.json` `author: chrismessina`), AND
+2. it is **already being changed** for some other reason, AND
+3. it has a `Toast.Style.Failure`, an `instanceof Error` unwrap ternary, or count-bearing copy.
+
+**Never on a fork you don't own** — this is a personal dependency, the same call as the
+logger. And **never as a standalone change**: sorting imports or swapping a helper is not
+worth a Store reviewer's time on its own. Bundle it with substantive work or skip it.
+
+**Why the rule exists.** Three rules above this one — the Copy-Error toast, the
+`instanceof Error` ternary, and count agreement — are enforced today by an agent
+remembering to grep. The 2026-07-25 fleet audit measured what that's worth:
+
+| Rule | Hand-written | Repos | Compliance |
+|---|---|---|---|
+| `Toast.Style.Failure` | 124 | 20 | — |
+| …carrying a Copy-Error action | **26** | **9** | **~20%** |
+| `instanceof Error ? …` ternary | 98 | 16 | — |
+| Count-bearing copy | 34 | 11 | — |
+
+`raycast-ios-apps` is the proof: **51 failure toasts, zero Copy-Error actions**, because it
+calls `showFailureToast` from `@raycast/utils` 42 times — which has no copy action at all.
+The house-style rule and the ergonomic path point in opposite directions, and the ergonomic
+path wins. A dependency inverts that: the compliant call becomes the shortest one.
+
+**The mapping:**
+
+```ts
+import { showError, getErrorMessage, countOf } from "@chrismessina/raycast-kit";
+
+// BEFORE — Copy-Error block hand-written (or, more often, omitted)
+const errorMessage = error instanceof Error ? error.message : String(error);
+await showToast({ style: Toast.Style.Failure, title: "Failed to Load", message: errorMessage,
+  primaryAction: { title: "Copy Error", onAction: async () => { await Clipboard.copy(errorMessage); } } });
+// AFTER
+await showError(error, { title: "Failed to Load" });
+
+// BEFORE — says "1 items" at count 1
+`${n} items`  /  `${n} item(s)`
+// AFTER
+countOf(n, "item")                      // "0 items" · "1 item" · "7 items"
+countOf(n, "item", { zero: "No items" }) // worded zero, per the count rule above
+```
+
+`showError` swallows `AbortError` by default — a user typing the next keystroke cancels the
+in-flight request, and that was never a failure worth toasting. Pass `ignoreAbort: false`
+where you do want it surfaced.
+
+**`getErrorMessage` is strictly better than the ternary it replaces**, which is why the
+`[lint]` ternary rule above stays satisfied by it. Validated against real fleet error shapes:
+an `itunes-api`-style `{status, statusText}` object, a nested `{error:{message}}` JSON API
+response, and a thrown plain object were all rendering **`"[object Object]"`** through the
+bare ternary. 4 of 7 real shapes produce better copy.
+
+**Pure-TS subpaths.** `@raycast/api` has no loadable runtime outside Raycast, so
+`getErrorMessage` / `countOf` are importable standalone —
+`@chrismessina/raycast-kit/errors`, `@chrismessina/raycast-kit/plural`. Use those in tests
+and scripts; the root export pulls in the toast module.
+
+**Audit posture — REPORT, never block.** `ship`'s pre-flight notes non-adoption as an
+opportunity and moves on. The hard gate stays on the *underlying* rules (a failure toast
+without a Copy-Error action fails the audit whether or not the kit is involved) — hand-rolling
+the compliant block is still perfectly correct. What fails is a missing copy action, not a
+missing dependency.
+
+**Out of scope, deliberately.** The same audit considered and **rejected** date, text, and
+number helpers: eight `formatDate` implementations across the fleet had eight different
+signatures (`string`, `number`, `Date|string`, `string+Period`, `string|undefined`) — a shared
+name, not a shared behavior. `truncate` looked fleet-wide at 79 uses until 40 proved to be in
+`digger` alone. Generic helpers belong in `@raycast/utils`, already imported by 19 of 24
+extensions. Don't grow the kit past rules that would otherwise depend on memory.
 
 ### `[both]` Keyboard shortcuts: `Common` first, platform-explicit only when cross-platform
 

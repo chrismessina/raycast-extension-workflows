@@ -108,6 +108,11 @@ The retrofit pass: take an extension that works (a fork you're contributing to, 
    - Failure toasts → grep `Toast.Style.Failure`; flag any without a Copy-Error action.
    - Shortcuts → find every `<Action>` with an inline `shortcut={{...}}`; map by semantics (see `keyboard-conventions.md`).
    - Web requests → grep `fetch`/`axios`/`node-fetch`/`useFetch`; if present, check for `@chrismessina/raycast-logger`.
+   - **Self-authored only** → failure toasts, `instanceof Error` ternaries, and `${n} items` /
+     `item(s)` copy are candidates for `@chrismessina/raycast-kit` (`showError`,
+     `getErrorMessage`, `countOf`). Offer it as part of the worklist; it is a *preference*, not
+     a violation — the violation is a missing copy action or `"1 items"`, which the kit happens
+     to make unrepresentable. **Skip entirely on forks.**
    - `[lint]` rules (hand-defined `Preferences`/`Arguments`, `any` casts) — fix if found, but the durable home is ESLint; you're the backstop.
 3. **Present a worklist** of violations before mutating en masse. Fix iteratively; show diffs.
 4. **Apply the keyboard transformation contract** exactly (semantics over combo; drop platform-specific inline objects; fix imports; re-check the conflict invariant after rewriting — a remap can create a new collision).
@@ -166,6 +171,12 @@ asserting it passed.
 Every code change here must conform to House Style. The canonical, tagged checklist is [`../../reference/house-style.md`](../../reference/house-style.md). Highlights you'll hit constantly:
 
 - **Every `Toast.Style.Failure` gets a "Copy Error" action** (copies the message to clipboard).
+  In a **self-authored** extension you're already changing, reach for
+  `showError(error, { title })` from `@chrismessina/raycast-kit` instead of hand-rolling the
+  block — it carries the copy action by definition, and the fleet audit found the hand-rolled
+  form at ~20% compliance. Hand-rolling remains correct; it's just the path that keeps losing.
+  **Never add the kit to a fork you don't own** (personal dep), and never as a standalone
+  change. Same for `countOf(n, "item")` over `${n} items` / `item(s)`.
 - **Web-request extensions use `@chrismessina/raycast-logger`** for structured logging.
 - **Shortcuts use `Keyboard.Shortcut.Common`** by semantics — see [`../../reference/keyboard-conventions.md`](../../reference/keyboard-conventions.md).
 - **Never hand-define `Preferences`/`Arguments`** — use the auto-generated ambient types. **No `any` casts.**

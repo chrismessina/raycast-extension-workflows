@@ -26,7 +26,14 @@ Run before PR. Each layer is gardening, not engineering:
    A type error needing code → hand to `develop`. (See house-style.md `[both]` tsc rule.)
 1. **Dep hygiene** — `npm outdated`, `npm audit fix`, non-breaking bumps only. Major migrations are NOT here — they're `develop` (gated by `reference/dep-gates.md`).
 2. **House-style audit** (read-only — the `npm audit` twin) — assert against `reference/house-style.md` + `reference/keyboard-conventions.md`:
-   - Every `Toast.Style.Failure` has a "Copy Error" action.
+   - Every `Toast.Style.Failure` has a "Copy Error" action. **This is the blocking assertion** —
+     hand-rolled or via `showError` from `@chrismessina/raycast-kit`, either satisfies it.
+   - **`raycast-kit` adoption — REPORT ONLY, never blocks.** On a **self-authored** extension,
+     note failure toasts / `instanceof Error` ternaries / `${n} items`-style copy that could move
+     to `showError` / `getErrorMessage` / `countOf`, as a one-line opportunity in your report.
+     Do **not** hand back to `develop` for this alone, do **not** open a PR for it alone, and
+     **never** flag it on a fork (personal dependency). The gate is the underlying rule, not the
+     dependency.
    - Web-request extensions use `@chrismessina/raycast-logger`.
    - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one (see `reference/keyboard-conventions.md`).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
