@@ -284,10 +284,15 @@ calls `showFailureToast` from `@raycast/utils` 42 times — which has no copy ac
 The house-style rule and the ergonomic path point in opposite directions, and the ergonomic
 path wins. A dependency inverts that: the compliant call becomes the shortest one.
 
+**Status:** published — [`@chrismessina/raycast-kit`](https://www.npmjs.com/package/@chrismessina/raycast-kit)
+v0.1.0 (2026-07-25), zero runtime deps, `@raycast/api` peer. First adoption: `get-app-icon`
+(`c1de11b`), which converted 4 non-compliant failure toasts and deleted a duplicate
+`pluralize`, net −22 lines.
+
 **The mapping:**
 
 ```ts
-import { showError, getErrorMessage, countOf } from "@chrismessina/raycast-kit";
+import { showError, failToast, getErrorMessage, countOf } from "@chrismessina/raycast-kit";
 
 // BEFORE — Copy-Error block hand-written (or, more often, omitted)
 const errorMessage = error instanceof Error ? error.message : String(error);
@@ -295,6 +300,13 @@ await showToast({ style: Toast.Style.Failure, title: "Failed to Load", message: 
   primaryAction: { title: "Copy Error", onAction: async () => { await Clipboard.copy(errorMessage); } } });
 // AFTER
 await showError(error, { title: "Failed to Load" });
+
+// A progress toast flipped to failure IN PLACE — showError creates a NEW toast, so
+// these sites need failToast. They're the majority of real failure paths, and were
+// the ones missing a Copy-Error action (attaching it by hand costs six lines).
+const toast = await showToast({ style: Toast.Style.Animated, title: "Exporting…" });
+try { await work(); toast.style = Toast.Style.Success; }
+catch (error) { failToast(toast, error, { title: "Export Failed" }); }
 
 // BEFORE — says "1 items" at count 1
 `${n} items`  /  `${n} item(s)`
