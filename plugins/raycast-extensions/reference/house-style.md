@@ -156,6 +156,33 @@ defect, not a style nit.
   collapsed newlines), and (b) flag any error `Detail` that doesn't use the `# Error`
   heading form. Overall description *length* is a `[build]` judgment, not a hard audit
   assertion.
+- **The newline half of (a) now has an ESLint rule** —
+  [`eslint-rules/no-multiline-emptyview-description.mjs`](./eslint-rules/no-multiline-emptyview-description.mjs).
+  Catches `List.EmptyView` / `Grid.EmptyView` / bare `EmptyView` (plus any local wrapper
+  passed via `additionalComponents`), across `"…"`, `{"…"}`, and template literals. Drop it
+  into an extension's flat config:
+
+  ```js
+  import noMultilineEmptyViewDescription from "./eslint-rules/no-multiline-emptyview-description.mjs";
+
+  export default defineConfig([
+    ...raycastConfig,
+    {
+      plugins: { house: { rules: { "no-multiline-emptyview-description": noMultilineEmptyViewDescription } } },
+      rules: { "house/no-multiline-emptyview-description": "error" },
+    },
+  ]);
+  ```
+
+  **Why lint and not a shared `<EmptyView>` component** (considered and rejected 2026-07-25):
+  a wrapper can't stop anyone using `List.EmptyView` directly, `description: string` can't
+  express "contains no newline" in TypeScript, and normalizing at runtime would *hide* the
+  defect rather than prevent it. Lint catches it before merge; the `ship` grep stays as the
+  backstop for extensions that haven't adopted the rule. A component layer would also drag
+  React and JSX build surface into every consumer for 55 call sites that are mostly
+  domain-specific (airbuddy's dispatches on four AirBuddy-only error classes).
+  *Fleet check 2026-07-25: zero current violations — this rule is preventive, and the
+  airbuddy comment that documented the trap did its job.*
 
 ### `[build]` Toggle copy states the resulting direction (on/off), never a bare "Toggled"
 
