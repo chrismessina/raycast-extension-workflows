@@ -62,6 +62,23 @@ Run before PR. Each layer is gardening, not engineering:
      flagged exactly this — it only came out right because CI/maintainer preserved
      the old date. Don't rely on that.) Diff the CHANGELOG against the published one
      and confirm only the new entry differs.
+4. **Greptile gauntlet** — run upstream's review rules against yourself *before* the bot
+   does. From the extension root:
+
+   ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/reference/scripts/greptile-preflight.sh"
+   ```
+
+   Non-zero exit = at least one rule `greptile-apps[bot]` or a CI enforcer fires on
+   deterministically ({PR_MERGE_DATE}, hand-defined `Preferences`, `.prettierrc` drift,
+   view-command screenshots, lockfiles, registry, `ai.evals`). `WARN` lines are heuristics —
+   read them, don't automate on them. Rules, evidence, and the judgment-call half the script
+   deliberately can't check: [`reference/greptile-review-rules.md`](../../reference/greptile-review-rules.md).
+
+   > **The script is the cheap half. The expensive half is the two questions it can't ask:**
+   > does an extension already do this job (the top cause of rejection — a duplicate gets
+   > closed with a 5/5 bot review), and can you watch the thread for five weeks (25 days
+   > idle → stale, 7 more → auto-closed)? Answer both before submitting, not after.
 
 ## HARD GATE — no PR without a green pre-flight
 
@@ -83,6 +100,8 @@ returned — paste the actual output, don't assert it:
 - [ ] **house-style audit** (step 2) → zero violations, having **read `package.json`
       `platforms` first** (absent ⇒ macOS-only; see `reference/house-style.md`)
 - [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`; screenshots/README current
+- [ ] **greptile gauntlet** (step 4) → `greptile-preflight.sh` exit 0, and the duplication +
+      availability questions answered (see `reference/greptile-review-rules.md`)
 
 **Any violation that needs code → STOP and hand to `develop`.** Do not fix it here and do
 not ship around it. `ship` never changes code behavior.

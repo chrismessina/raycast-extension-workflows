@@ -191,6 +191,19 @@ What actually matters, in rough priority:
    entry (never a hand-invented date), icon 512×512, screenshots ≤ 6, README assets **outside**
    `metadata/`. Fetch the live docs rather than auditing from memory — procedure in
    [`../../reference/store-guidelines.md`](../../reference/store-guidelines.md).
+
+   You already have the checkout, so run the machine half instead of eyeballing it:
+
+   ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/reference/scripts/greptile-preflight.sh"   # from the extension root
+   ```
+
+   These are upstream's own rules, not Chris's, so they're fair review comments on anyone's
+   PR — unlike House Style (see the caveat in step 5). `greptile-apps[bot]` will have posted
+   its own review on the PR; **read that first and don't duplicate it.** Your value is the
+   part it can't reach: whether an extension already does this job, and whether the thing
+   actually works when you run it. Rules and evidence:
+   [`../../reference/greptile-review-rules.md`](../../reference/greptile-review-rules.md).
 4. **Secrets and telemetry** — hardcoded tokens, an API key in source, analytics calls the
    description doesn't mention.
 5. **Dependencies — read these before you install anything.** Any new entry in `package.json`,

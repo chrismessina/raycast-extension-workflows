@@ -32,7 +32,10 @@ Mostly **no** — the layers don't overlap:
 **`.prettierrc` convention.** Extensions use the Raycast-scaffold standard
 `{"printWidth": 120, "singleQuote": false}` — keep it identical across the fleet
 (this repo's own config deliberately differs: it's docs/YAML, not extension TS, and
-excludes Markdown so hand-authored prose isn't reflowed).
+excludes Markdown so hand-authored prose isn't reflowed). **This is not just a
+preference: `greptile-apps[bot]` fires a named rule on it upstream, and on the
+`singleQuote` key being *absent* even when `printWidth` is correct — see
+[`greptile-review-rules.md`](greptile-review-rules.md) R3.**
 
 **Import ordering** is the one formatting-shaped candidate. It's *not* a rule (adoption
 was too split — see [Still to enumerate](#still-to-enumerate)), but it can be made
@@ -57,6 +60,10 @@ const preferences = getPreferenceValues<Preferences>();
 
 - **Durable home:** ESLint rule (custom or config).
 - **Audit backstop:** grep for a local `interface Preferences|Arguments` declaration, or a `getPreferenceValues<LocalType>()` where `LocalType` is defined in-file.
+- **Not only ours.** Upstream enforces this by name — `greptile-apps[bot]`'s rule reads
+  *"Don't manually define `Preferences` for `getPreferenceValues()`"*, and it also flags the
+  second-order defect: a hand-written field with no `package.json` counterpart makes the
+  branch reading it dead code. See [`greptile-review-rules.md`](greptile-review-rules.md) R2.
 
 ### `[lint]` No `any` type casting
 
@@ -645,6 +652,11 @@ a date before merge. Entries follow `## [<Title>] - {PR_MERGE_DATE}` under a
 - **Audit:** `grep -c '{PR_MERGE_DATE}' CHANGELOG.md` — expect it only on the newest
   unreleased entry, never on an already-shipped one, and never a real date on an
   unmerged entry.
+- **The most-fired upstream rule.** `Changelog entries must use {PR_MERGE_DATE}` was the
+  single most frequent Greptile finding across the sampled PRs, always **P1**, worded
+  *"Merge Date Is Hard-Coded."* Two sub-rules ride along: new entries go at the **top**, and
+  a first release is `[Initial Release]`, not `[Initial Version]`. See
+  [`greptile-review-rules.md`](greptile-review-rules.md) R1.
 
 ---
 
