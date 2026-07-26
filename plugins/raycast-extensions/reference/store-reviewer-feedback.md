@@ -12,6 +12,59 @@ PR, and **@raycastbot** for automation.
 
 ---
 
+## The numbers (full census, not a sample)
+
+GitHub's filtered PR counts are a complete population, so these are censuses rather than
+estimates. Repo: `raycast/extensions`. Pulled 2026-07-26.
+
+**All PRs, same Jan 1 – Jul 26 window each year:**
+
+| Year | Merged | Closed unmerged | Unmerged share of resolved |
+|---|---:|---:|---:|
+| 2023 | 1,288 | 492 | 27.6% |
+| 2024 | 1,638 | 514 | 23.9% |
+| 2025 | 1,755 | 1,032 | **37.0%** |
+| 2026 | 2,413 | 1,470 | **37.9%** |
+
+**New-extension PRs only** (`label:"new extension"`), Q1 of each year — Q1 is used because it
+is *fully resolved*: only 2 of 1,999 Q1-2026 PRs are still open.
+
+| Q1 | Merged | Closed unmerged | Failure rate | Submissions |
+|---|---:|---:|---:|---:|
+| 2024 | 154 | 143 | 48.1% | 297 |
+| 2025 | 179 | 330 | 64.8% | 509 |
+| 2026 | 321 | 667 | **67.5%** | **988** |
+
+Q1 2026 submissions are **3.3× 2024's**; merges only doubled. In the same quarter, PRs that
+were *not* new extensions failed at **18.9%** — new extensions fail at ~3.6× the rate of
+everything else.
+
+**How the 1,470 dead PRs of 2026 died:**
+
+- **1,042 (70.9%) were in draft state** when they were closed.
+- **3 (0.2%) had zero comments.** Effectively every one got engagement; almost none got
+  finished.
+- 773 PRs carried the `status: stalled` label in the window.
+
+### Draft is not "unfinished" — it is the maintainers' hand-back mechanism
+
+A sample of 10 draft-dead Q1 PRs: **7 were converted to draft by a maintainer**, 1 by the
+author, 2 had no draft event and no human comment at all (pure silence → stale). The
+mechanic is stated outright by @pernielsentikaer on #24100:
+
+> "I converted this PR into a draft until it's ready for the review, **please press the button
+> Ready for review when it's ready** and we'll have a look 😊"
+
+So: **draft means the ball is in your court, and nothing will happen until you click a
+button.** The stale timer keeps running the whole time. #24105 shows the full shape — ready →
+drafted → ready → drafted → abandoned → auto-closed, over ten weeks.
+
+> **Watch for the other draft trap:** `ray publish` opens your PR **as a draft** by default.
+> If you never click *Ready for review*, you are already in the abandonment state before a
+> maintainer has looked at it once.
+
+---
+
 ## The escalation ladder — learn to read your position on it
 
 Rejections are almost never stated as rejections. The sequence is always the same, and each
@@ -23,9 +76,9 @@ rung is quieter than the last:
 3. **Stale label** — 25 days of no activity (`stale.yml`).
 4. **Auto-closed** — 7 days after that.
 
-> **"Converted to draft" is the moment to act, and it does not look like a deadline.** In the
-> sample, the median outcome after a draft conversion with no author reply is a closed PR
-> ~5 weeks later. Nobody says no; the clock does it.
+> **"Converted to draft" is the moment to act, and it does not look like a deadline.**
+> **70.9% of every PR that died in 2026 was sitting in draft when it closed.** Nobody says no;
+> the clock does it.
 
 **A PR you don't answer is a PR you lose.** `@raycastbot`'s standing notice —
 *"initial review may take up to 15 business days"* — trains authors to stop watching, and the
@@ -66,7 +119,14 @@ The language is near-templated. @0xdhrv, across five different PRs:
 - **Raycast's own built-ins count as prior art.** #28385 wasn't compared to an extension at
   all: *"This overlaps with Raycast's built-in app management features: System Commands
   already include Quit All Apps / Quit All Apps Except Frontmost with exclusions, and Auto
-  Quit supports quitting selected apps."* Check the app before checking the Store.
+  Quit supports quitting selected apps."* The bluntest version, @pernielsentikaer on #24097 in
+  January: *"What's the purpose of this extension, there is nothing that's not possible out of
+  the box in Raycast already."* Check the app before checking the Store.
+
+> **This pattern is stable across the whole year, not a recent tightening.** The same
+> objection, in the same words, appears in January (#24100 shell-alias, #24106 AdGuard,
+> #24110 sleep-timer, #24118 bed-time-calculator) and in July (#28456, #28111, #28265,
+> #28362, #28366, #28300, #28326). Duplication has been the top rejection cause all year.
 - **A cluster of small extensions counts as one incumbent.** #28362 (a devtoolkit) was
   measured against four separate existing extensions at once — Ray Boop, Base64, Format JSON,
   UUID Generator.
@@ -164,6 +224,8 @@ Note what makes a bump credible: **CI green and bot feedback already addressed.*
 - [ ] No private/internal URLs, no internal planning docs, no raw source images in the diff.
 - [ ] Calendar reminder to check the thread inside 25 days — **and treat a draft conversion as
       a same-week deadline.**
+- [ ] After `ray publish`: **the PR is a draft. Click "Ready for review."** Nothing is queued
+      until you do.
 
 ## Gotchas
 
