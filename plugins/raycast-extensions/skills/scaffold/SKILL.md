@@ -35,6 +35,14 @@ Scaffold into a standalone working dir / `chrismessina/raycast-{name}` repo. Mir
 
 → `develop` once files exist and you're writing real command code.
 
+→ then `ship`, which submits a net-new extension via **Route A (`ray publish`)** — the
+default for **every** first submission. Do **not** let `author: chrismessina` route a
+never-published extension into Route B: that's mirror *maintenance* and its first step
+diffs against a published version that doesn't exist yet. A standalone
+`chrismessina/raycast-<name>` mirror, if you want one, is created **after** the first
+merge — not as a prerequisite for submitting. (Misroute reported 2026-07-26 on
+`claude-artifacts`; see `ship`'s "Submission — pick the topology FIRST".)
+
 ## House Style from the start
 
 New code must conform to House Style as it's written — see `reference/house-style.md` (`[build]` entries) and `reference/keyboard-conventions.md`. Don't scaffold code that the `ship` house-style audit would immediately flag.

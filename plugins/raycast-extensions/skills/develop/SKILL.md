@@ -108,6 +108,7 @@ The retrofit pass: take an extension that works (a fork you're contributing to, 
    - Failure toasts → grep `Toast.Style.Failure`; flag any without a Copy-Error action.
    - Shortcuts → find every `<Action>` with an inline `shortcut={{...}}`; map by semantics (see `keyboard-conventions.md`).
    - Web requests → grep `fetch`/`axios`/`node-fetch`/`useFetch`; if present, check for `@chrismessina/raycast-logger`.
+   - Custom icons → grep `icon=`/`source:` for a bare `.svg`/`.png` filename with no adjacent `tintColor`; a monochrome glyph without one is invisible in one of the two themes, and `fill="currentColor"` in the asset does **not** fix it.
    - **Self-authored only** → failure toasts, `instanceof Error` ternaries, and `${n} items` /
      `item(s)` copy are candidates for `@chrismessina/raycast-kit` (`showError`,
      `getErrorMessage`, `countOf`). Offer it as part of the worklist; it is a *preference*, not

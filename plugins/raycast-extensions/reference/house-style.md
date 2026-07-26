@@ -325,10 +325,32 @@ an `itunes-api`-style `{status, statusText}` object, a nested `{error:{message}}
 response, and a thrown plain object were all rendering **`"[object Object]"`** through the
 bare ternary. 4 of 7 real shapes produce better copy.
 
-**Pure-TS subpaths.** `@raycast/api` has no loadable runtime outside Raycast, so
-`getErrorMessage` / `countOf` are importable standalone —
-`@chrismessina/raycast-kit/errors`, `@chrismessina/raycast-kit/plural`. Use those in tests
-and scripts; the root export pulls in the toast module.
+**Pure-TS subpaths — decide the entry point per MODULE, not per file type.**
+`@raycast/api` ships types only (no `main`; the host injects it at runtime), so the root
+export — which pulls in `showError` → `toast.js` → `@raycast/api` — is **unloadable in plain
+Node**. The pure helpers have standalone subpaths: `@chrismessina/raycast-kit/errors`
+(`getErrorMessage`, `isAbortError`, `redactSecrets`), `@chrismessina/raycast-kit/plural`
+(`countOf`, `plural`).
+
+The rule is **not** "subpaths in tests, root everywhere else." It is:
+
+| Module | Import from |
+|---|---|
+| UI layer — components, actions, anything already importing `@raycast/api` | root |
+| Pure logic — parsers, formatters, index/cache readers, tests, scripts | the subpath |
+
+**The trap is a production module that happens to be headlessly testable.** Importing the
+root into one poisons it: the module still compiles and `ray build` still succeeds — esbuild
+resolves `@raycast/api` fine — so **nothing fails until you run that module outside Raycast**,
+and then it fails as `Cannot find module '@raycast/api'` with a stack naming `toast.js`. The
+error never mentions the kit's export map, so it reads like a broken install rather than a
+wrong entry point.
+
+*(Receipt, `claude-artifacts` 2026-07-25 — the kit's first adoption: a root import of
+`getErrorMessage` into the index-parser module broke all 11 of its headless fixtures at once.
+The first fix attempted was a hand-rolled local copy plus a comment claiming the kit "can't"
+be used in pure modules — wrong, and the kit's README had documented the subpath all along.
+Check the entry point before concluding the kit doesn't fit.)*
 
 **Audit posture — REPORT, never block.** `ship`'s pre-flight notes non-adoption as an
 opportunity and moves on. The hard gate stays on the *underlying* rules (a failure toast
@@ -493,6 +515,50 @@ a future extension doesn't regress to `osascript`.
 > - **`environment.isDevelopment`** — 0 repos. Gate dev-only debug UI behind it
 >   (today debug output is gated on the `verboseLogging` preference instead — fine,
 >   but `isDevelopment` is the idiomatic switch for *dev-only* affordances).
+
+---
+
+## Icons
+
+### `[both]` A bundled SVG/PNG icon needs an explicit `tintColor` — a bare filename is invisible in one theme
+
+Referencing a custom asset by bare filename — `icon="artifact_file.svg"` — renders it
+with **its own baked-in fill**, which Raycast does not adjust for the active theme. A
+glyph authored dark reads fine in light mode and **disappears against the dark
+background** (and vice versa). Pass the object form instead:
+
+```tsx
+const ARTIFACT_ICON: Image.ImageLike = {
+  source: "artifact_file.svg",
+  tintColor: Color.PrimaryText,   // theme-aware; tracks the row's title color
+};
+```
+
+**`fill="currentColor"` in the SVG does NOT fix this** — and believing it does is the
+trap. Raycast rasterizes a bundled asset with no inherited text color, so
+`currentColor` resolves to a default that is just as wrong in one of the two themes.
+The tint has to come from the **code** side. (Learned the hard way on
+`claude-artifacts`, 2026-07-25: the icon was switched to `currentColor` specifically
+to fix dark mode, shipped, and was still invisible in dark mode on the next screenshot.
+The fix was `tintColor`, not the asset.)
+
+- **Which color:** `Color.PrimaryText` for a glyph that should read like the row title;
+  `Color.SecondaryText` for a de-emphasised accessory; a semantic `Color.*` (Red /
+  Green / Orange) where the icon carries status. **Never a raw hex** — the `Color.*`
+  enum is the theme-safe layer, and a hex string reintroduces the same bug.
+- **Exempt:** full-color raster assets (logos, app icons, screenshots) that are
+  *meant* to keep their own colors, and `Icon.*` built-ins (already theme-aware).
+- **Not the same as `environment.appearance`** — that is for graphics you *render*
+  yourself (SVG charts you generate). For a bundled asset handed to a component,
+  `tintColor` is the mechanism.
+- **Audit:** grep `icon=` / `source:` for a bare `.svg`/`.png` string with no adjacent
+  `tintColor`, and flag it for a monochrome glyph. A green `ray lint` proves nothing
+  here — no rule checks it, and the defect is invisible until someone opens the other
+  theme.
+
+> **Check both themes before calling an icon done.** This class of defect is
+> undetectable from a build, a lint, and a single screenshot — it needs the theme
+> toggled. Same discipline as walking the empty/error states.
 
 ---
 

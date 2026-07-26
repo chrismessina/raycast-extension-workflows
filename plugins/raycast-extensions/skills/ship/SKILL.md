@@ -99,23 +99,45 @@ Title convention: `Update <Title> extension` by default; `[Title] <fix>` when on
 
 ## Submission — pick the topology FIRST
 
-There are two ways an extension reaches the Store, and they are NOT
-interchangeable. Before doing anything, decide which one you're in — reading
-`package.json`'s `author` field is the fastest tell:
+**`author` is NOT the routing key.** It was, and that misroutes every net-new
+first-party extension into Route B — whose first step is "reconcile the mirror against
+the published version," for something that has never been published. (Reported
+2026-07-26 by an agent shipping `claude-artifacts`: `author: chrismessina`, no mirror,
+not upstream. It correctly pushed back that Route A was simpler and would work.)
 
-- **Contributor to a monorepo extension** (`author` is someone else, or the repo
-  is a fork of an existing `raycast/extensions` extension you help maintain — e.g.
-  `video-downloader`, `author: vimtor`). → **Route A: `ray publish`.** This is the
-  common case and the default.
-- **Owner of your own extension** (`author: chrismessina`, first-party, has — or
-  needs — a standalone `chrismessina/raycast-<name>` mirror). → **Route B:
-  standalone mirror + manual fork-sync PR.**
+**The real key is: is this extension ALREADY in `raycast/extensions`?** Run it, don't
+infer it:
 
-If unsure, it's almost always Route A. Only reach for Route B when the extension is
-genuinely yours and the standalone-mirror topology applies. **Do NOT ask the user a
-repo/PR-destination decision tree for a Route-A extension** — `ray publish` decides
-the destination (it always targets `raycast/extensions`). Asking is the failure this
-section exists to prevent.
+```bash
+EXT="$(jq -r .name package.json)"     # the Store slug — package.json `name`
+gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[0].name' >/dev/null 2>&1 \
+  && echo "PUBLISHED → see the table below" \
+  || echo "NOT PUBLISHED → Route A"
+```
+
+| Published upstream? | `author` | Route |
+|---|---|---|
+| **No** (net-new, first submission) | anyone, including you | **Route A** — `ray publish`. Always. |
+| Yes | someone else (you contribute) | **Route A** — `ray publish`. |
+| Yes | `chrismessina` **and** a `chrismessina/raycast-<name>` mirror exists | **Route B** — mirror + fork-sync |
+| Yes | `chrismessina`, no mirror | **Route A**, then create the mirror afterward if you want one |
+
+**Route A is the default and covers every first submission.** `ray publish` handles a
+brand-new extension end to end: it needs no standalone repo, no git remote, and no
+published baseline. There is nothing Route B adds to a first submission except steps
+that cannot succeed.
+
+**Route B is a *post-publication mirror-maintenance* flow, not a submission flow.** It
+exists so a first-party extension you already shipped can be developed in its own repo
+and synced into the fork. It presupposes a published version to diff against. If you
+reach its "verify local `main` == the published v1.x" step and there is no published
+v1.x, **you are in the wrong route — go to Route A.**
+
+**Do NOT ask the user a repo/PR-destination decision tree.** Run the check above and
+proceed. `ray publish` always targets `raycast/extensions`; there is no destination to
+choose. Asking is the failure this section exists to prevent — and asking *because the
+`author` field pointed at a route the extension's state contradicts* is the specific
+failure the table above fixes.
 
 ### Route A — `ray publish` (default; monorepo extensions you contribute to)
 
