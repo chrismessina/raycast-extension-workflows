@@ -17,11 +17,13 @@ A Claude Code plugin (`plugins/raycast-extensions/`) whose skills are keyed to l
 | **`develop`** | "change code", "migrate to ESLint 10 / new Node", "**bring this up to my house style**" | Feature/refactor, gated major dep migrations, and the **house-style audit fix** (retrofit existing code to House Style). Absorbs the former `raycast-extension-modernizer`. |
 | **`ship`** | "submit / publish to the Store", "address review feedback" | Pre-flight (dep hygiene + **house-style audit** + weeding), Store-compliance gate, PR prep, review-feedback cycle, mirror-sync verification, post-merge cleanup. |
 
-The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. Shared facts live in `plugins/raycast-extensions/reference/` (`house-style.md`, `keyboard-conventions.md`, `greptile-review-rules.md`, and stubs for sparse-checkout discipline, dep gates, PR conventions, Store guidelines, and the extension mirror — which points back at the sync workflows below).
+The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. Shared facts live in `plugins/raycast-extensions/reference/` (`house-style.md`, `keyboard-conventions.md`, `greptile-review-rules.md`, `store-reviewer-feedback.md`, and stubs for sparse-checkout discipline, dep gates, PR conventions, Store guidelines, and the extension mirror — which points back at the sync workflows below).
 
 ### The Store review gauntlet
 
-[`reference/greptile-review-rules.md`](plugins/raycast-extensions/reference/greptile-review-rules.md) is a reverse-engineered snapshot of what `greptile-apps[bot]` enforces on `raycast/extensions` PRs — its four confirmed custom rules (quoted from the bot's own `Rule Used:` footers), upstream's public `copilot-instructions.md` conventions, the defect taxonomy that drives its 1–5 confidence score, and the ranked list of what *actually* gets submissions rejected. Reconstructed from ~45 sampled PRs; see the [write-up](docs/solutions/workflow-issues/reverse-engineering-the-store-review-gauntlet.md).
+[`reference/greptile-review-rules.md`](plugins/raycast-extensions/reference/greptile-review-rules.md) is a reverse-engineered snapshot of what `greptile-apps[bot]` enforces on `raycast/extensions` PRs — its nine confirmed custom rules (quoted from the bot's own `Rule Used:` footers), upstream's public `copilot-instructions.md` conventions, the defect taxonomy that drives its 1–5 confidence score, and the ranked list of what *actually* gets submissions rejected. Reconstructed from ~95 sampled PRs — see the [write-up](docs/solutions/workflow-issues/reverse-engineering-the-store-review-gauntlet.md).
+
+The human half — what the maintainers actually say, and the question → **converted to draft** → stale → auto-closed ladder that ends most submissions — is in [`reference/store-reviewer-feedback.md`](plugins/raycast-extensions/reference/store-reviewer-feedback.md). Read that one before writing a new extension: duplication is the top rejection cause, and every duplicate-rejected PR in the sample had a 4/5 or 5/5 bot score.
 
 The mechanical half runs as a pre-flight gate in `ship`:
 
@@ -29,7 +31,7 @@ The mechanical half runs as a pre-flight gate in `ship`:
 bash plugins/raycast-extensions/reference/scripts/greptile-preflight.sh   # cwd = extension root
 ```
 
-Exit 1 on any `FAIL` — each is a rule the bot or a CI enforcer fires on deterministically. `WARN`s are heuristics for a human to read. The two questions that decide most submissions — *does an extension already do this job?* and *can you watch the PR for five weeks?* — are checklist items, not checks.
+Exit 1 on any `FAIL` — each is a rule the bot or a CI enforcer fires on deterministically. `WARN`s are heuristics for a human to read. The two questions that decide most submissions — *does an extension (or a Raycast built-in) already do this job?* and *can you watch the PR for five weeks?* — are checklist items, not checks.
 
 > **Status:** v0.1.0. `develop` + the two House Style references are authored deeply; `scaffold` / `ship` are first-draft stubs. Design spec: [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
 

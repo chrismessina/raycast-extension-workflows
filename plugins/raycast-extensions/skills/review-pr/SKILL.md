@@ -204,6 +204,13 @@ What actually matters, in rough priority:
    part it can't reach: whether an extension already does this job, and whether the thing
    actually works when you run it. Rules and evidence:
    [`../../reference/greptile-review-rules.md`](../../reference/greptile-review-rules.md).
+
+   > **If it's a new extension, check for a Store — or built-in — equivalent before reviewing
+   > the code.** Duplication is what actually sinks these PRs, and it sinks them at 5/5 bot
+   > scores. Saying "this overlaps X, consider contributing there" early is far more useful to
+   > the author than a line-level review of code that won't be accepted. The maintainers'
+   > phrasing is worth borrowing:
+   > [`../../reference/store-reviewer-feedback.md`](../../reference/store-reviewer-feedback.md) §1.
 4. **Secrets and telemetry** — hardcoded tokens, an API key in source, analytics calls the
    description doesn't mention.
 5. **Dependencies — read these before you install anything.** Any new entry in `package.json`,

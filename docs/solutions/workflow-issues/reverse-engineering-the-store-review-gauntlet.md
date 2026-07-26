@@ -61,11 +61,21 @@ exist.
 
 **Mine the bot's own citations.** Greptile footers its comments with `Rule Used:` and
 `Knowledge Base Used:` when a *custom* rule fires — so the rules quote themselves. Sampling
-~45 PRs (#27467–#29739, merged / open / closed-unmerged) surfaced exactly four distinct rule
-strings, all citing a knowledge base named **Extension Authoring Conventions**, plus a second
-KB, **Extensions Build & Publish Flow**, on packaging findings.
+**~95 PRs** (#22064–#29739, merged / open / closed-unmerged) surfaced **nine** distinct rule
+strings, all citing a knowledge base named **Extension Authoring Conventions**, plus
+**Extensions Build & Publish Flow** on packaging findings and a `raycast/-/custom-context`
+slug on one.
 
-Four rules is a suspiciously short list — until you find
+> **Sampling depth was load-bearing, and the first pass got it wrong.** At ~45 PRs the list
+> looked like four rules; the true count is nine. The reason is a sampling bias that isn't
+> visible from inside a small sample: **rules fire almost exclusively on new-extension PRs**,
+> and the first pass was weighted toward recent merged `Update <ext>` PRs, which draw general
+> defect findings instead. Rule strings also render **truncated** in GitHub's collapsed footer
+> (`What: Extensions with view-type commands must incl…`), so a rule can be present and
+> unreadable. Saturation only arrived when two consecutive batches of new-extension PRs
+> returned no new strings.
+
+Nine rules is still a short list — until you find
 **`raycast/extensions/.github/copilot-instructions.md`**, a maintained, public,
 machine-readable review spec whose wording the four rule strings track almost verbatim
 (`{PR_MERGE_DATE}` format, `{"printWidth": 120, "singleQuote": false}`, the metadata-folder
@@ -76,15 +86,18 @@ The split that fell out of the survey, and that the deliverable is built around:
 
 | Layer | Where it lives | How to check it |
 |---|---|---|
-| 4 custom rules + CI enforcers | Greptile dashboard / `.github/workflows/` | Mechanical — a script |
+| 9 custom rules + CI enforcers | Greptile dashboard / `.github/workflows/` | Mechanical — a script |
 | ~14 authored conventions | `.github/copilot-instructions.md` | Mostly mechanical |
 | Defect taxonomy | Emergent from the model | Human, at design time |
 | Acceptance | A maintainer's judgment | Human, **before** writing code |
 
 Shipped as [`reference/greptile-review-rules.md`](../../../plugins/raycast-extensions/reference/greptile-review-rules.md)
-(the rules and their evidence) plus
+(the rules and their evidence),
+[`reference/store-reviewer-feedback.md`](../../../plugins/raycast-extensions/reference/store-reviewer-feedback.md)
+(the human gate — verbatim maintainer language and the escalation ladder), and
 [`reference/scripts/greptile-preflight.sh`](../../../plugins/raycast-extensions/reference/scripts/greptile-preflight.sh)
-(the mechanical half), wired into `ship`'s pre-flight as a hard gate and into `review-pr`.
+(the mechanical half), wired into `ship`'s pre-flight as a hard gate, plus `develop` and
+`review-pr`.
 
 ## Why This Works
 
@@ -113,21 +126,34 @@ action inside the package and so shows zero literal matches).
 **Rank the gates by what actually kills PRs, not by which is loudest.** Three gates run on
 every submission — CI, Greptile, maintainer — and the ranking is inverted from the noise:
 
-1. **Duplication** closed six of the sampled unmerged PRs. The maintainer test is *"the same
+1. **Duplication** closed ~12 of the sampled unmerged PRs. The maintainer test is *"the same
    broad job,"* not feature overlap: a Steam search extension arguing differentiation on
    pricing and wishlist data still lost, with the counter-offer to reposition as a dedicated
-   price tracker. **Search the Store before writing code.**
-2. **The stale bot** closed ten. `stale.yml` is 25 days idle → stale label, 7 more → closed,
-   against a stated review SLA of "up to 15 business days." Several died after a maintainer
-   asked one question nobody answered. A Store PR is a month-long commitment to watch a thread.
-3. **Screenshots** — must be genuine *Capture Window* captures at 2000×1250, not generated
-   images. Rejected on one PR, revision-requested on two more.
+   price tracker. **Raycast's own built-in commands count as prior art too** — one PR was
+   rejected against System Commands, not against any extension. And the incumbent extension's
+   author joins the thread and sides with consolidation. **Search before writing code.**
+2. **The stale bot** closed ten-plus. `stale.yml` is 25 days idle → stale label, 7 more →
+   closed, against a stated review SLA of "up to 15 business days." Several died after a
+   maintainer asked one question nobody answered.
+3. **Screenshots** — genuine *Capture Window* captures at 2000×1250, padded, and **free of
+   real data** (maintainers ask for mock data on anything sensitive).
 4. Everything the bot says.
 
+**Nobody ever says "rejected."** The ladder is: a question → **PR converted to draft** → stale
+→ auto-closed. Drafting is the actual verdict and it stops review; a drafted PR does not
+re-enter the queue on its own. Every duplicate-rejected PR in the sample was drafted at that
+step and died ~5 weeks later without another human comment.
+
 **A P1 is not a merge blocker, and a 5/5 is not an approval.** PR #29605 merged with three
-open P1 comments the same day it was approved. Meanwhile a follow-up 5/5 is explicitly scoped
-— *"no blocking failure remains within the scope of the previous review threads"* — so it
-means "what you were told to fix, you fixed," not "the PR was re-reviewed."
+open P1 comments the same day it was approved. A follow-up 5/5 is explicitly scoped —
+*"no blocking failure remains within the scope of the previous review threads"* — so it means
+"what you were told to fix, you fixed," not "the PR was re-reviewed."
+
+**But the bot does cost you a cycle.** The wider sample corrected the first pass here: on
+new-extension PRs, a Greptile review is frequently the last event before the **author closes
+their own PR** (eleven instances), often reopening a corrected one. The bot doesn't reject
+you; it hands you a P1 list that costs a resubmission. That is precisely the cost the
+preflight script removes.
 
 **Re-read `copilot-instructions.md` before a first submission.** It is the one layer that is
 public and versioned. The Tier 1 list is a dated snapshot of dashboard config that can change

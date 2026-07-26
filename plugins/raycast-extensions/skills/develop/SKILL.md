@@ -27,6 +27,14 @@ All three change code, so they all live here and all hand forward to `ship` when
 
 **Never sync or clone the full monorepo.** Sparse-checkout discipline applies to every operation here. Before any monorepo read/write, consult [`../../reference/sparse-checkout-discipline.md`](../../reference/sparse-checkout-discipline.md).
 
+> **Changing UI or behavior in an extension you DON'T own? Propose it in an issue first.**
+> The reviewer on an `Update <ext>` PR is usually the extension's *author*, and unrequested
+> design changes get rejected on design-authority grounds regardless of code quality —
+> *"Feature or UI changes are better proposed and discussed first, rather than implemented
+> upfront."* Likewise, a workaround that re-implements what a dependency already in the tree
+> provides gets sent upstream rather than merged. Both patterns, verbatim, in
+> [`../../reference/store-reviewer-feedback.md`](../../reference/store-reviewer-feedback.md) §3.
+
 ---
 
 ## Before the first edit — locate, then branch

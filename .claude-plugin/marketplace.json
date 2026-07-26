@@ -19,13 +19,15 @@
       },
       "homepage": "https://github.com/chrismessina/raycast-extension-workflows",
       "tags": [
+        "develop",
+        "greptile",
+        "house-style",
+        "lifecycle",
         "raycast",
         "raycast-extensions",
-        "lifecycle",
         "scaffold",
-        "develop",
         "ship",
-        "house-style"
+        "store-review"
       ],
       "source": "./plugins/raycast-extensions"
     }

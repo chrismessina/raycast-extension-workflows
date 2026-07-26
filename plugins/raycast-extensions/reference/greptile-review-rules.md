@@ -5,11 +5,19 @@ review output rather than from its (private) dashboard config. Consumed by
 [`ship`](../skills/ship/SKILL.md)'s pre-flight, so its findings land *before* submission
 instead of after.
 
-> **Provenance.** Reconstructed 2026-07-26 from ~45 sampled `raycast/extensions` PRs
-> (#27467–#29739), split across merged, open, and closed-unmerged. Greptile's rules are
+> **Provenance.** Reconstructed 2026-07-26 from **~95 sampled `raycast/extensions` PRs**
+> (#22064–#29739), split across merged, open, and closed-unmerged. Greptile's rules are
 > configured in its dashboard and are **not** in the repo — so Tier 1 below is what the bot
 > *quoted back* in its own comment footers, not a copy of a config file. Tier 2 *is* a real
 > file and is the closest thing to a public spec.
+>
+> **Saturation.** The nine Tier 1 rules stopped growing after ~70 PRs: the last two sampling
+> batches (24 PRs) surfaced no new rule strings. Rules fire almost exclusively on
+> **new-extension** PRs; `Update <ext>` PRs draw general defect findings instead. So the list
+> below is probably close to complete, but it is a *floor*, not a proof of completeness.
+
+Human reviewer patterns — which matter more than everything here — are in
+[`store-reviewer-feedback.md`](store-reviewer-feedback.md).
 
 ## The three gates, and which one actually kills PRs
 
@@ -31,10 +39,30 @@ than every code rule on this page combined.
 
 ## Tier 1 — confirmed custom rules (verbatim)
 
-These are the only strings observed in Greptile's `Rule Used:` footers. Each is backed by a
+Nine distinct strings observed in Greptile's `Rule Used:` footers. Each is backed by a
 `Knowledge Base Used:` line naming **Extension Authoring Conventions** (a second KB,
-**Extensions Build & Publish Flow**, appears on packaging findings). Treat them as blocking —
-they fire deterministically, every time, on every extension.
+**Extensions Build & Publish Flow**, appears on packaging findings; a third slug,
+`raycast/-/custom-context`, appears on #29265). Treat them as blocking — they fire
+deterministically, every time, on every new extension.
+
+**Rules are stored in Greptile's `What:` / `Why:` form**, and GitHub collapses the footer, so
+a rule often renders truncated (`What: Extensions with view-type commands must incl…`). The
+strings below are stitched from the PRs where the footer rendered in full.
+
+| # | Rule (verbatim `What:`) | Severity | Seen on |
+|---|---|---|---|
+| **R1** | `Changelog entries must use {PR_MERGE_DATE}` | P1 | 9+ PRs |
+| **R2** | `Don't manually define Preferences for getPreferenceValues` | P1/P2 | 10+ PRs |
+| **R3** | `All extensions must use the standard Raycast Prettier configuration with singleQuote: false` | P2 | #29725, #28448, #28942, #29371 |
+| **R4** | `Extensions with view-type commands must include metadata/ folder with Raycast-styled screenshots` | P1 | 9+ PRs |
+| **R5** | `Every dependency listed in package.json must be imported in at least one source file.` | P1 | #27212, #29371, #26501, #28647 |
+| **R6** | `Assign at least one predefined category to extensions` | P2 | #27212 |
+| **R7** | `Ensure that CHANGELOG.md is created or updated` | P1 | #29431, #29371 |
+| **R8** | `Require Raycast extension projects to include $schema reference` | P2 | #29431 |
+| **R9** | `In ESLint v9+, defineConfig is exported from eslint/config` | P2 | #29447 |
+
+R5–R9 are the ones this file missed on the first pass; all five are mechanical, and all five
+are now in the preflight script. R1–R4 in detail:
 
 ### R1. `Changelog entries must use {PR_MERGE_DATE}`
 
@@ -102,6 +130,42 @@ usually found next to:
 - **Real captures** from Raycast's *Capture Window* command. `0xdhrv` rejected #28448's
   screenshots as "not actual image capture[s] from Raycast," and asked #28907 to recapture.
 - **README images live outside `metadata/`** — a PR-template checklist item.
+- **Don't commit the raw source images either.** #28307 drew a P2 for ~10 MB of
+  `images/metadata-source/` PNGs "permanently baked into git history."
+
+### R5–R9, briefly
+
+- **R5 — unused dependencies.** The most common single finding after R1. `@raycast/utils`
+  declared and never imported is the canonical instance (#27212, #29371, #26501, #28647,
+  #29735, #29670). It also fires in reverse: a `package-lock.json` root entry still listing a
+  dependency `package.json` dropped breaks `npm ci` in CI (#28362, #28846).
+- **R6 — categories.** Also flagged when the category is *wrong*, not just missing: #27212
+  drew "Category should be `Applications` not `Productivity`" with the reasoning that
+  misclassification reduces Store discoverability. #28456 got the same for `Web` vs `System`.
+- **R7 — CHANGELOG must exist.** Distinct from R1 (which is about the date placeholder). A new
+  extension with no `CHANGELOG.md` at all is a P1 (#29431, #29371), and `changelog_enforcer.yml`
+  fails the PR independently.
+- **R8 — `$schema`.** `"$schema": "https://www.raycast.com/schemas/extension.json"` as the
+  first manifest key.
+- **R9 — ESLint flat config.** `import { defineConfig } from "eslint/config"` — not
+  `module.exports = require(...)` (#29447). The preset must be `@raycast/eslint-config`; using
+  `@raycast/eslint-plugin` directly is its own P1 (#28288).
+
+### Adjacent findings that recur but were never cited as rules
+
+Fire often enough to be worth pre-empting, but appear as ordinary findings:
+
+- **Unpinned dependencies.** `"latest"` for `@raycast/api`/`@raycast/utils` — "a breaking API
+  release can silently break the extension" (#29447, #29564). And a *forward* major range CI
+  can't resolve blocks the build before `ray build` runs (#29614, P1).
+- **Shell injection.** Interpolating a path into an `exec()` string run through `/bin/sh`
+  (#29431, P1); `pkill -9 -f "$bundleId"` matching whole command lines and killing unrelated
+  processes (#28385, P1); unquoted heredoc variables in a helper script (#29566, P2). The
+  clean pattern the bot praises is `execFile`/`spawn` with an args array.
+- **Private/internal URLs shipped in code.** #29566 hardcoded a private company GitHub URL as
+  its README link — every Store user gets a 404 (P1).
+- **Internal planning docs shipped** in the extension directory (#28729, `docs/plans/`).
+- **`author` field not matching the PR submitter** (#28381, P2).
 
 ---
 
@@ -211,47 +275,46 @@ whole PR was re-reviewed; it means what you were told to fix, you fixed.
 
 ## What actually gets PRs rejected
 
-Ranked by frequency in the closed-unmerged sample. **None of the top two is a code problem.**
+Full treatment — including the maintainers' verbatim language and the escalation ladder — is in
+[`store-reviewer-feedback.md`](store-reviewer-feedback.md). The short version, ranked by
+frequency in the closed-unmerged sample: **none of the top two is a code problem.**
 
-### 1. Duplicating an extension that already exists — by far the top cause
+> **One correction to the first version of this file.** It said Greptile "almost never kills a
+> PR." The wider sample says that's only half right. Greptile rarely *blocks* a merge — but on
+> new-extension PRs its review is frequently the last event before the **author closes their
+> own PR**: #29438, #29431, #29415, #29396, #29386, #29371, #29265, #29520, #29614, #29616,
+> #29566. Several then reopen a corrected PR. So the bot doesn't reject you; it hands you a
+> P1 list that costs a resubmission cycle. **That is exactly the cost the preflight script
+> exists to avoid.**
 
-Six of the sampled closed-unmerged PRs died here, every one of them with a 4/5 or 5/5 Greptile
-score. The maintainer language is consistent:
+### 1. Duplicating something that already exists — by far the top cause
 
-> "We already have an extension in the Store that deals with this. Could we consider enhancing
-> the existing extension below instead of creating another one?" — `0xdhrv` on #28456
+~12 of the sampled closed-unmerged PRs died here, every one with a 4/5 or 5/5 Greptile score.
+The test is **"the same broad job,"** not feature overlap — and **Raycast's own built-in
+commands count as prior art**, not just Store extensions. The incumbent extension's author
+usually joins the thread and sides with consolidation.
 
-> "Both extensions answer the same broad job… The extra pricing and discovery metadata is
-> useful, but I'd consider it an enhancement to the existing Steam extension, not enough to
-> justify a second Steam search extension." — `0xdhrv` on #28111
-
-The test is **"the same broad job,"** not feature overlap. #28111 argued differentiation on
-pricing and wishlist features and still lost; the counter-offer was to reposition as a
-*dedicated price tracker* rather than a second general Steam search. Also seen on #28429
-(2FA — "there are already several extensions in the store with that purpose"), #28903 (OCR),
-#28952 (Coffee — "better to have a single extension for both macOS and Windows than two
-separate ones"), and #29670 (JWT — closed in favor of adding commands to the existing JWT
-Decoder).
-
-**So: search the Store before writing a line of code, and if anything is close, decide up
-front whether you are submitting a new extension or a PR to theirs.** If you submit anyway,
-lead the PR description with the differentiation argument in *job* terms.
+Verbatim maintainer language, the four sharpening rules, and what to do instead:
+[`store-reviewer-feedback.md`](store-reviewer-feedback.md) §1.
 
 ### 2. The stale bot
 
-`stale.yml`: **25 days** of inactivity → stale label, **7 more** → auto-closed:
-
-> "This pull request has been automatically closed due to inactivity."
-
-Ten of the sampled closed PRs died this way, several after a maintainer left one question the
-author never answered. Combined with `raycastbot`'s standing notice that initial review "may
-take up to 15 business days," the window is tighter than it looks. **A Store PR is a
-commitment to watch a thread for a month.**
+`stale.yml`: **25 days** of inactivity → stale label, **7 more** → auto-closed. Ten+ of the
+sampled closed PRs died this way, several after one unanswered maintainer question. The
+escalation ladder — and why *"converted to draft"* is the real verdict — is in
+[`store-reviewer-feedback.md`](store-reviewer-feedback.md).
 
 ### 3. Screenshot quality
 
-Real Raycast captures, right dimensions, right padding. Rejected on #28448, revision requested
-on #28907 and #28904.
+Real *Capture Window* output, 2000×1250, ≤ 6, correctly padded, **and no real data** —
+maintainers ask for mock data on anything that could expose sensitive information. Rejected on
+#28448, re-requested on #28288, #28907, #28904, #26501.
+
+### 4. Design-authority conflicts on someone else's extension
+
+Not a Store-review failure at all — the extension's *author* is the reviewer, and objects to
+unrequested UI/behavior changes. Propose in an issue first.
+[`store-reviewer-feedback.md`](store-reviewer-feedback.md) §3.
 
 ---
 
@@ -271,12 +334,14 @@ bash …/greptile-preflight.sh --path ~/Developer/GitHub/chrismessina/raycast-fo
 `FAIL` = a Tier 1 rule or a CI gate, and it will be flagged. `WARN` = a heuristic that needs
 your eyes — it does not exit non-zero, and some warnings are correct code.
 
-**Judgment** — the script cannot see any of these, and they matter more:
+**Judgment** — the script cannot see any of these, and they matter more. The submission-side
+half is in [`store-reviewer-feedback.md`](store-reviewer-feedback.md); the code-side half:
 
-- [ ] **Duplication.** Searched the Store; either nothing does this job, or the PR body argues
-      the difference in job terms.
-- [ ] **Availability.** You can respond to review for the next ~5 weeks.
-- [ ] **Screenshots** are genuine *Capture Window* output, current with the commands that exist.
+- [ ] **Duplication.** Searched the Store *and Raycast's built-ins*; either nothing does this
+      job, or the PR body argues the difference in job terms.
+- [ ] **Availability.** You can respond to review for the next ~5 weeks, and you'll treat a
+      draft conversion as a same-week deadline.
+- [ ] **Screenshots** are genuine *Capture Window* output, current, padded, and free of real data.
 - [ ] **Every mutation refreshes what derives from it** — pushed views included.
 - [ ] **Every in-flight request survives unmount and supersession** without stranding shared state.
 - [ ] **Every changed preference/enum has a migration** for values users already stored.

@@ -76,9 +76,16 @@ Run before PR. Each layer is gardening, not engineering:
    deliberately can't check: [`reference/greptile-review-rules.md`](../../reference/greptile-review-rules.md).
 
    > **The script is the cheap half. The expensive half is the two questions it can't ask:**
-   > does an extension already do this job (the top cause of rejection — a duplicate gets
-   > closed with a 5/5 bot review), and can you watch the thread for five weeks (25 days
-   > idle → stale, 7 more → auto-closed)? Answer both before submitting, not after.
+   > does an extension — **or a Raycast built-in** — already do this job (the top cause of
+   > rejection, and every duplicate-rejected PR in the sample had a 4/5 or 5/5 bot review),
+   > and can you watch the thread for five weeks (25 days idle → stale, 7 more → auto-closed)?
+   > Answer both before submitting, not after. The maintainers' verbatim language, the
+   > escalation ladder, and the pre-submission checklist are in
+   > [`reference/store-reviewer-feedback.md`](../../reference/store-reviewer-feedback.md).
+
+   **For a first submission of a NEW extension, read that file before writing code.** Its
+   §1 is the difference between a merged extension and five weeks spent on one that was never
+   going to be accepted.
 
 ## HARD GATE — no PR without a green pre-flight
 
@@ -240,6 +247,19 @@ Full topology, the "what ships" allow-list, and the assets-bloat gotcha:
 > `gh api -X DELETE repos/<you>/extensions/contents/extensions/<name>/<path> -f sha=<blob> -f branch=ext/<name> -f message=…`.
 > Verify PR *content*, not just the file list, by the same route — a staging race can push a
 > commit whose message claims a fix its code lacks.
+
+## Review-feedback cycle — read your position on the ladder
+
+Feedback on an open Store PR is rarely phrased as a rejection. The sequence is: **a question →
+PR converted to draft → stale label (25 days) → auto-closed (7 more)**. Being drafted is the
+real verdict and it stops maintainer review; a drafted PR does not re-enter the queue on its
+own. Push the fix **and say you did**.
+
+- A one-line maintainer ask ("Could you resolve the merge conflict?") is still a 25-day clock.
+- A duplication question is not a code review — see
+  [`reference/store-reviewer-feedback.md`](../../reference/store-reviewer-feedback.md) §1
+  before answering it, and answer in *job* terms.
+- Feedback needing code → hand to `develop`. `ship` never changes code behavior.
 
 ## Post-merge cleanup
 

@@ -182,12 +182,72 @@ if [ -f README.md ] && grep -q '](.*metadata/' README.md; then
 fi
 
 # ------------------------------------------------------------------------------------------
+head2 "R5 — manifest \$schema and categories"
+# ------------------------------------------------------------------------------------------
+# Rule: "Require Raycast extension projects to include $schema reference"
+if ! jq -e 'has("$schema")' package.json >/dev/null 2>&1; then
+  fail "package.json has no \$schema reference." \
+       "Add \"\$schema\": \"https://www.raycast.com/schemas/extension.json\" as the first key."
+else
+  ok "\$schema present"
+fi
+
+# Rule: "Assign at least one predefined category to extensions"
+if ! jq -e '(.categories|type=="array") and (.categories|length>0)' package.json >/dev/null 2>&1; then
+  fail "package.json declares no categories." "At least one predefined category is required."
+else
+  ok "categories: $(jq -r '.categories|join(", ")' package.json)"
+fi
+
+# ------------------------------------------------------------------------------------------
+head2 "R6 — eslint flat config"
+# ------------------------------------------------------------------------------------------
+# Rule: "In ESLint v9+, defineConfig is exported from eslint/config" — and the repo convention
+# is the @raycast/eslint-config preset, not @raycast/eslint-plugin directly (#28288).
+ESLINT_CFG=""
+for c in eslint.config.js eslint.config.mjs eslint.config.cjs; do [ -f "$c" ] && ESLINT_CFG="$c" && break; done
+if [ -n "$ESLINT_CFG" ]; then
+  if grep -q '@raycast/eslint-plugin' "$ESLINT_CFG" && ! grep -q '@raycast/eslint-config' "$ESLINT_CFG"; then
+    fail "$ESLINT_CFG uses @raycast/eslint-plugin directly." \
+         "The canonical preset is @raycast/eslint-config."
+  elif grep -q 'module\.exports' "$ESLINT_CFG"; then
+    fail "$ESLINT_CFG uses the CommonJS module.exports pattern." \
+         "ESLint v9 flat config: import { defineConfig } from \"eslint/config\"."
+  elif ! grep -q 'defineConfig' "$ESLINT_CFG"; then
+    warn "$ESLINT_CFG does not use defineConfig from eslint/config."
+  else
+    ok "$ESLINT_CFG uses defineConfig"
+  fi
+fi
+
+# ------------------------------------------------------------------------------------------
 head2 "Lockfiles, registry, manifest"
 # ------------------------------------------------------------------------------------------
 for lf in yarn.lock bun.lock bun.lockb pnpm-lock.yaml; do
   [ -f "$lf" ] && fail "$lf present — only package-lock.json is allowed."
 done
 [ -f package-lock.json ] || warn "No package-lock.json." "CI builds with npm and expects it in the PR."
+
+# `"latest"` silently adopts breaking majors on a fresh CI install (#29447, #29564). A major
+# range ahead of what CI can resolve blocks the build before `ray build` even runs (#29614).
+LATEST="$(jq -r '[(.dependencies//{}), (.devDependencies//{})] | add | to_entries[]
+                 | select(.value == "latest" or .value == "*") | "\(.key)@\(.value)"' package.json 2>/dev/null)"
+if [ -n "$LATEST" ]; then
+  fail "unpinned dependency version(s): $(printf '%s' "$LATEST" | tr '\n' ' ')" \
+       "Use a caret range (^1.2.3). \"latest\" adopts breaking majors on a fresh install."
+fi
+
+# A lockfile whose root entry disagrees with package.json fails `npm ci` in CI (#28362, #28846).
+if [ -f package-lock.json ]; then
+  PJ_DEPS="$(jq -S -r '.dependencies // {} | keys | join(",")' package.json)"
+  PL_DEPS="$(jq -S -r '.packages[""].dependencies // {} | keys | join(",")' package-lock.json 2>/dev/null)"
+  if [ -n "$PL_DEPS" ] && [ "$PJ_DEPS" != "$PL_DEPS" ]; then
+    fail "package-lock.json root entry disagrees with package.json dependencies." \
+         "npm ci will fail. Run npm install and commit the regenerated lockfile."
+  else
+    ok "lockfile root entry matches package.json"
+  fi
+fi
 
 if [ -f .npmrc ] && grep -qE '^[^#]*registry[[:space:]]*=' .npmrc; then
   fail ".npmrc sets a registry." "Only https://registry.npmjs.org is permitted (global or scoped)."
@@ -299,11 +359,14 @@ if [ "$FAILS" -gt 0 ]; then
   printf 'or a CI enforcer fires on deterministically.\n'
 fi
 printf '\nStill unchecked by machine — see ../greptile-review-rules.md:\n'
-printf '  · Does an extension already do this job? (top cause of rejection)\n'
+printf '  · Does an extension — OR a Raycast built-in — already do this job? (top cause of rejection)\n'
 printf '  · Can you watch the PR thread for 5 weeks? (stale bot closes at 25+7 days)\n'
-printf '  · Are the screenshots real Capture Window output, and current?\n'
+printf '  · Are the screenshots real Capture Window output, current, correctly padded,\n'
+printf '    and free of real data? (maintainers ask for mock data on anything sensitive)\n'
+printf '  · Does package.json `author` match the account opening the PR?\n'
 printf '  · Do mutations refresh derived state, and do in-flight requests survive unmount?\n'
 printf '  · Does every changed preference/enum migrate values users already stored?\n'
+printf '  · Are all URLs/repos referenced from code public? (a private org link ships a 404)\n'
 
 [ "$FAILS" -gt 0 ] && exit 1
 exit 0
