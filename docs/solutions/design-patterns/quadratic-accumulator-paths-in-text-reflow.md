@@ -37,7 +37,7 @@ tags:
 
 # Guard accumulator loops with an elapsed-time assertion
 
-> **Source extension:** every `src/…` and `test/…` path in this doc is relative to
+> **Source extension:** file citations are absolute paths into
 > [`chrismessina/raycast-wrap-unwrap`](https://github.com/chrismessina/raycast-wrap-unwrap),
 > where the four fixes and the committed perf guards live. The guidance itself is
 > extension-agnostic — it applies to any accumulator-shaped loop over user-supplied input.
@@ -46,13 +46,13 @@ tags:
 
 The Wrap/Unwrap extension reflows Markdown text: `unwrap` collapses hard-wrapped lines back into paragraphs, `wrap` re-breaks them at a width budget. Both are accumulator-shaped — they walk lines and build up a growing string (unwrap's `Group.joined`) or a growing array of prior decisions (classify's `out`).
 
-The extension advertises a hard input ceiling of one million characters, declared at `src/lib/pipeline.ts:4`:
+The extension advertises a hard input ceiling of one million characters, declared at `/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/pipeline.ts:4`:
 
 ```ts
 export const MAX_INPUT = 1_000_000;
 ```
 
-Anything larger is rejected up front with an `OversizeError` (`src/lib/pipeline.ts:59-61`). Everything at or under that ceiling is a paste the extension has promised to handle. That promise is what turned four ordinary-looking lines of code into user-visible hangs.
+Anything larger is rejected up front with an `OversizeError` (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/pipeline.ts:59-61`). Everything at or under that ceiling is a paste the extension has promised to handle. That promise is what turned four ordinary-looking lines of code into user-visible hangs.
 
 Four independent O(n²) paths were found in the reflow engine across an adversarial-review campaign (PR [raycast/extensions#29727](https://github.com/raycast/extensions/pull/29727), open and in review at time of writing). Each one made a paste *inside* the supported limit hang Raycast for seconds to minutes with no spinner, no counter, no way to tell the extension from a crash. Measured before → after:
 
@@ -85,7 +85,7 @@ Type checking cannot see algorithmic complexity. Linters cannot see it. Correctn
 
 Three sub-rules make the guard work:
 
-**1. The bound must be generous, not tight.** The unwrap guard at `test/unwrap.test.ts:248-262` asserts `< 400ms` against a linear implementation that runs in roughly 15ms — a 25× headroom. That is deliberate. A tight bound (say 50ms) flakes on a loaded laptop, gets marked skip, and stops protecting anything. A 25× bound cannot flake on hardware variance but cannot survive an algorithmic regression either: the quadratic version took over 1000ms at that same size. The gap between "slow machine" and "wrong complexity" is orders of magnitude, so calibrate to the gap, not to the target.
+**1. The bound must be generous, not tight.** The unwrap guard at `/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/unwrap.test.ts:248-262` asserts `< 400ms` against a linear implementation that runs in roughly 15ms — a 25× headroom. That is deliberate. A tight bound (say 50ms) flakes on a loaded laptop, gets marked skip, and stops protecting anything. A 25× bound cannot flake on hardware variance but cannot survive an algorithmic regression either: the quadratic version took over 1000ms at that same size. The gap between "slow machine" and "wrong complexity" is orders of magnitude, so calibrate to the gap, not to the target.
 
 **2. The input has to be big enough to separate the curves.** 20,000 lines for unwrap; 80,000 tokens for wrap. At 100 lines both implementations look identical.
 
@@ -95,7 +95,7 @@ Three sub-rules make the guard work:
 
 The killer is never an obvious loop. It is an innocuous call on a growing accumulator. All four causes here reduce to the same shape — a method whose cost is proportional to the *accumulated* size, invoked once per *iteration*:
 
-**Cause 1 — rescanning prior state (`src/lib/classify.ts`).** Deciding whether an indented line sits inside a list required knowing whether a list item had appeared since the last blank. The original implementation asked that question by rescanning every record produced so far:
+**Cause 1 — rescanning prior state (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/classify.ts`).** Deciding whether an indented line sits inside a list required knowing whether a list item had appeared since the last blank. The original implementation asked that question by rescanning every record produced so far:
 
 ```ts
 // BEFORE (removed in the fix commit on this branch)
@@ -107,7 +107,7 @@ The killer is never an obvious loop. It is an innocuous call on a growing accumu
 
 `[...out]` copies the whole array, `.map()` allocates another, `.reverse()` a third — three full passes over all prior output, once per line. 188KB of indented code: 10,299ms.
 
-The fix replaces the query with incrementally-maintained state. A `Set` of blockquote depths is kept current inside a `push()` helper that every classification site funnels through (`src/lib/classify.ts:314-354`):
+The fix replaces the query with incrementally-maintained state. A `Set` of blockquote depths is kept current inside a `push()` helper that every classification site funnels through (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/classify.ts:314-354`):
 
 ```ts
 const listDepthsSinceBlank = new Set<number>();
@@ -124,7 +124,7 @@ const push = (rec: Classified): void => {
 };
 ```
 
-The consuming branch is now a `Set` membership test (`src/lib/classify.ts:441`):
+The consuming branch is now a `Set` membership test (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/classify.ts:441`):
 
 ```ts
 const inListContext = listDepthsSinceBlank.has(prefixes.length);
@@ -132,7 +132,7 @@ const inListContext = listDepthsSinceBlank.has(prefixes.length);
 
 The structural move: routing *all* mutations through one `push()` helper is what makes incremental maintenance safe. Scattered `out.push()` calls would each need to remember to update the `Set`.
 
-**Cause 2 — an anchored regex against the whole accumulator.** Unwrap's hyphen-rejoin rule tests whether the accumulated paragraph ends in a letter-plus-hyphen, using `HYPHEN_BREAK_END` (`src/lib/regex.ts:100`):
+**Cause 2 — an anchored regex against the whole accumulator.** Unwrap's hyphen-rejoin rule tests whether the accumulated paragraph ends in a letter-plus-hyphen, using `HYPHEN_BREAK_END` (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/regex.ts:100`):
 
 ```ts
 export const HYPHEN_BREAK_END = /[\p{L}\p{Nd}][-­]$/u;
@@ -154,7 +154,7 @@ The isolated measurement, reproduced against a 32k-iteration concat loop:
 
 Note what the middle row proves: the slice alone was cheap here because V8's flattened result is cached and the loop appends to the *same* string, so the cost amortizes. Add the regex and the cost explodes. That interaction is not something you can reason about from the source — you have to measure it.
 
-The fix threads a short tail string through the group object so the accumulator is never touched. `takeTail` (`src/lib/unwrap.ts:34-39`) grabs 3 UTF-16 code units and refuses to split a surrogate pair:
+The fix threads a short tail string through the group object so the accumulator is never touched. `takeTail` (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/unwrap.ts:34-39`) grabs 3 UTF-16 code units and refuses to split a surrogate pair:
 
 ```ts
 function takeTail(text: string): string {
@@ -165,7 +165,7 @@ function takeTail(text: string): string {
 }
 ```
 
-`Group.tail` carries it (`src/lib/unwrap.ts:168`), and `joinWithHyphenation` returns both the new accumulator and the new tail, deriving the tail from the short strings rather than from `joined` (`src/lib/unwrap.ts:119-155`):
+`Group.tail` carries it (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/unwrap.ts:168`), and `joinWithHyphenation` returns both the new accumulator and the new tail, deriving the tail from the short strings rather than from `joined` (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/unwrap.ts:119-155`):
 
 ```ts
 const keptTail = drop > 0 ? priorTail.slice(0, -drop) : priorTail;
@@ -175,9 +175,9 @@ const joined = (drop > 0 ? prior.slice(0, prior.length - drop) : prior) + separa
 return { joined, tail: takeTail(keptTail + separator + next) };
 ```
 
-Two design details carry weight here. The `separator`/`drop` variables are computed first and applied *once* at the end, so no branch slices the rope. And a naive earlier attempt at this fix used a flat 2-code-unit tail window — fast, but it sliced astral characters in half so `\p{L}` stopped matching and the Unicode join it exists for silently broke. Bounding a window is a correctness change, not just a performance change; the boundary needs its own test (`test/unwrap.test.ts:264` guards the surrogate-pair case).
+Two design details carry weight here. The `separator`/`drop` variables are computed first and applied *once* at the end, so no branch slices the rope. And a naive earlier attempt at this fix used a flat 2-code-unit tail window — fast, but it sliced astral characters in half so `\p{L}` stopped matching and the Unicode join it exists for silently broke. Bounding a window is a correctness change, not just a performance change; the boundary needs its own test (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/unwrap.test.ts:264` guards the surrogate-pair case).
 
-The same principle applies to per-line state generally. `advanceInlineState` (`src/lib/unwrap.ts:58-109`) computes whether the text ends inside an open code span or link destination *per line*, carrying the result forward on the group — because rescanning the whole accumulated paragraph for that answer was the other half of the 18-second paste.
+The same principle applies to per-line state generally. `advanceInlineState` (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/unwrap.ts:58-109`) computes whether the text ends inside an open code span or link destination *per line*, carrying the result forward on the group — because rescanning the whole accumulated paragraph for that answer was the other half of the 18-second paste.
 
 **Cause 4 — self-inflicted, by a correctness fix, in a session dedicated to removing this exact bug class.** This is the sharpest evidence for the guidance.
 
@@ -185,7 +185,7 @@ Round 7 of review found `wrap`'s block-safety check wrong in both directions: te
 
 That code never reached a commit. The committed perf guard caught it first.
 
-The shipped version gathers only the tokens that could land on the candidate line, bounded by **both** a token count and the width budget (`src/lib/wrap.ts`):
+The shipped version gathers only the tokens that could land on the candidate line, bounded by **both** a token count and the width budget (`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/src/lib/wrap.ts`):
 
 ```ts
 let probeLine = t;
@@ -229,7 +229,7 @@ And the timing rule: **write the perf guard when you fix the first quadratic pat
 
 ### The guard for unwrap
 
-`test/unwrap.test.ts:248-262`:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/unwrap.test.ts:248-262`:
 
 ```ts
 test("unwrap stays linear on a long single-paragraph paste", () => {
@@ -253,7 +253,7 @@ Every element is doing work: `process.hrtime.bigint()` rather than `Date.now()` 
 
 ### The guard for wrap
 
-`test/wrap.test.ts:280-286`:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/wrap.test.ts:280-286`:
 
 ```ts
 test("wrap stays linear despite per-token block probing", () => {
@@ -269,7 +269,7 @@ The name states the hazard — wrap *must* probe per token for round-trip safety
 
 ### The adjacent guard worth copying
 
-`test/wrap.test.ts:248-254` uses the same elapsed-time technique against a different quadratic-ish failure — regex backtracking rather than accumulator growth:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/wrap.test.ts:248-254` uses the same elapsed-time technique against a different quadratic-ish failure — regex backtracking rather than accumulator growth:
 
 ```ts
 test("nested-paren link pattern has no catastrophic backtracking", () => {
@@ -285,7 +285,7 @@ Same instrument, adversarial input instead of merely large input. Both belong in
 
 ### A related trap the same review surfaced
 
-`test/wrap.test.ts:271-278` guards a bug that is not quadratic but shares the "the budget got bypassed" symptom:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap/test/wrap.test.ts:271-278` guards a bug that is not quadratic but shares the "the budget got bypassed" symptom:
 
 ```ts
 test("the new-block guard does not fire on em/en dashes in prose", () => {
