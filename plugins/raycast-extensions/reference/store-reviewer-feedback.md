@@ -46,6 +46,55 @@ everything else.
   finished.
 - 773 PRs carried the `status: stalled` label in the window.
 
+### Q1 2026 new-extension PRs, per-PR (n=989, GitHub search API)
+
+The distributions, not just the totals:
+
+| | Merged (321) | Failed (667) |
+|---|---:|---:|
+| Zero-comment PRs | **0** | **0** |
+| Median comments | 6 | 4 |
+| Median days to resolution | 12.9 | 21.1 |
+| In draft at close | 0 | **515 (77.2%)** |
+
+**Nobody is ignored.** Not one of the 989 PRs — merged or failed — had zero comments. The
+median failed PR received **four**. Failure here is not neglect; it is a conversation that
+stopped.
+
+**Merge rate rises with conversation depth:**
+
+| Comments | Merged | Failed | Merge rate |
+|---:|---:|---:|---:|
+| 0–2 | 2 | 178 | **1.1%** |
+| 3–4 | 95 | 244 | 28.0% |
+| 5–6 | 97 | 146 | 39.9% |
+| 7–9 | 89 | 65 | **57.8%** |
+| 10+ | 38 | 34 | 52.8% |
+
+> **Read this correlationally, not causally.** Merged PRs accumulate comments partly *because*
+> they progress — approvals and re-reviews are themselves comments. The defensible claim is
+> the 0–2 row: **2 merges against 178 failures.** Essentially nothing ships without a
+> conversation, and a quarter of all failures never got past two comments.
+
+**When failures die** (days from open to close):
+
+| Window | Share | What it is |
+|---|---:|---|
+| < 1 day | 26.5% | Withdrawn/superseded — median **1** comment. A distinct cohort, not abandonment. |
+| 1–14 days | 10.2% | Early exits |
+| 14–25 days | 23.7% | Pre-stale abandonment |
+| 25–60 days | **35.5%** | **The stale-bot zone** (25-day label + 7-day close) |
+| 60+ days | 4.0% | Long tail |
+
+**Authors:** 714 distinct, **77.7% submitted exactly one** new-extension PR that quarter. Of
+the 520 authors with at least one failure, only **65 (12.5%)** landed any new extension in the
+same quarter.
+
+> **Experience barely moves the needle — which rules out the obvious explanation.** One-PR
+> authors merged at **31.7%**; multi-PR authors at **33.5%**. If this were simply newcomers
+> not knowing the ropes, repeat contributors would do far better. They don't. What separates
+> outcomes is *finishing the specific thread*, not general familiarity.
+
 ### Draft is not "unfinished" — it is the maintainers' hand-back mechanism
 
 A sample of 10 draft-dead Q1 PRs: **7 were converted to draft by a maintainer**, 1 by the
@@ -211,6 +260,23 @@ addressed"* and it merged. #28828's author had to tell the bot *"the issue is no
 Note what makes a bump credible: **CI green and bot feedback already addressed.**
 
 ---
+
+## Chris's own record (for calibration)
+
+Lifetime against `raycast/extensions`: **76 merged, 18 closed-unmerged, 4 open** — an 80.9%
+merge rate against an ecosystem baseline of 32.5% for new extensions.
+
+The trend matters more than the total:
+
+| Period | Merged | Failed | Merge rate |
+|---|---:|---:|---:|
+| Before 2026 | 36 | 17 | 67.9% |
+| 2026 YTD | **40** | **1** | **97.6%** |
+
+Same author, same repo, same reviewers. The variable that changed is process, not talent —
+which is the whole premise of this plugin. Keep the 2026 number honest by keeping the habits:
+answer the duplication question the same day, click *Ready for review*, and never let a thread
+sit past a week.
 
 ## Pre-submission checklist (the half no script can run)
 

@@ -75,10 +75,54 @@ caveats in the appendix section below. Backing detail lives in
 
 ## Section 3 — The mechanism (the actual scoop)
 
-- **70.9%** of the 1,470 dead PRs in 2026 were sitting **in draft** when they closed.
-- **3 of 1,470** had zero comments. **~99.8% got engagement.** Nobody is being ignored.
+*Now backed by per-PR data: n=989 Q1-2026 new-extension PRs from the GitHub search API.*
+
+**Lead with the single most surprising number:**
+
+- **Zero.** Not one of the 989 PRs — merged or failed — had zero comments. The median *failed*
+  PR got **four**. **Nobody is being ignored.** Failure is a conversation that stopped.
+
+*Exhibit D — the money chart: merge rate by comment count.*
+
+| Comments | Merged | Failed | Merge rate |
+|---:|---:|---:|---:|
+| 0–2 | 2 | 178 | **1.1%** |
+| 3–4 | 95 | 244 | 28.0% |
+| 5–6 | 97 | 146 | 39.9% |
+| 7–9 | 89 | 65 | **57.8%** |
+| 10+ | 38 | 34 | 52.8% |
+
+- **Be honest about causality in-post** — it's the strongest move available and critics will
+  raise it anyway. Merged PRs accrue comments partly *because* they progress. The claim that
+  survives: the 0–2 row. **2 merges vs 178 failures.** Nothing ships without a conversation,
+  and a quarter of failures never got past two replies.
+- Do **not** write "comment more to get merged." Write: *the shape of a surviving PR is a
+  thread with a half-dozen turns in it.*
+
+**Then the draft mechanism:**
+
+- **77.2%** of failed Q1 new-extension PRs were in **draft** at close. Of merged PRs: **zero**.
 - Sample of 10 draft-dead PRs: **7 converted to draft by a maintainer**, 1 by the author, 2
   pure silence.
+
+**Then when they die** — the stale-bot fingerprint is visible in the histogram:
+
+| Window | Share | What it is |
+|---|---:|---|
+| < 1 day | 26.5% | Withdrawn/superseded, median **1** comment — a *different* story; separate it out |
+| 1–14 days | 10.2% | Early exits |
+| 14–25 days | 23.7% | Pre-stale abandonment |
+| **25–60 days** | **35.5%** | **The stale-bot zone** (25-day label + 7-day close) |
+| 60+ days | 4.0% | Long tail |
+
+**And the finding that kills the easy explanation:**
+
+- 714 distinct authors; **77.7% submitted exactly one.**
+- One-PR authors merged at **31.7%**. Multi-PR authors: **33.5%.** Nearly identical.
+- Beat: *if this were just newcomers not knowing the ropes, repeat contributors would do much
+  better. They don't.* What separates outcomes isn't familiarity — it's finishing **this**
+  thread.
+- Of 520 authors with a failed extension, only **65 (12.5%)** landed one that quarter.
 - The mechanic in the maintainer's own words (@pernielsentikaer, #24100):
   > "I converted this PR into a draft until it's ready for the review, please press the button
   > **Ready for review** when it's ready and we'll have a look 😊"
@@ -150,6 +194,26 @@ caveats in the appendix section below. Backing detail lives in
 - **When you get the duplication question, answer it the same day.** The PRs that survived it
   answered fast and repositioned.
 
+## Section 6.5 — "I'm not immune" (the personal spine)
+
+*Place this before the close. It converts the piece from analysis into testimony and
+disarms the "easy for you to say" reaction.*
+
+- My lifetime record on this repo: **76 merged, 18 closed-unmerged, 4 open.**
+- The trend is the point:
+
+| Period | Merged | Failed | Merge rate |
+|---|---:|---:|---:|
+| Before 2026 | 36 | 17 | 67.9% |
+| 2026 YTD | **40** | **1** | **97.6%** |
+
+- Beat: **17 of my 18 failures are from before this year.** Same author, same repo, same
+  reviewers. I did not get smarter — I got a process.
+- Name what actually changed, concretely: a pre-flight checklist, answering the duplication
+  question the same day, and treating "converted to draft" as a this-week deadline.
+- Optional: name one of my own dead PRs and what I'd do differently. Specific > humble.
+- This is also the natural, non-salesy place to link the tooling.
+
 ## Section 7 — Close
 
 - Callback to the cold open.
@@ -160,14 +224,23 @@ caveats in the appendix section below. Backing detail lives in
 
 ## Appendix — method (short, in-post; builds trust with this audience)
 
-- Source: public GitHub PR data for `raycast/extensions`, counts from filtered searches
-  (complete populations, not samples), 2026-07-26.
+- Source: public GitHub PR data for `raycast/extensions`, 2026-07-26. Aggregate counts from
+  filtered searches (complete populations, not samples); per-PR distributions from the GitHub
+  search API for Q1 2026 new-extension PRs (n=989).
 - Qualitative: ~150 PRs read across Jan–Jul 2026, merged / open / closed-unmerged.
 - **Stated caveats** — cheap to include, expensive to omit:
-  - Right-censoring: recent windows understate failure. Q1 used for rate comparisons.
+  - Right-censoring: recent windows understate failure. Q1 used for all rate comparisons.
+  - Comment-count↔outcome is **correlational**; merged PRs accrue comments by progressing.
+  - `comments` counts the conversation thread, not inline review comments — the real
+    engagement is *higher* than reported, which only strengthens the "nobody is ignored" point.
+  - Bot comments (raycastbot, greptile) are included in comment counts; the 0–2 bucket is
+    therefore *"almost no human conversation."*
   - Label-scoped counts depend on maintainers applying `new extension` consistently.
-  - AI-assistance correlation ≠ causation; no way to identify AI-authored PRs from the data.
+  - AI-assistance correlation ≠ causation; the data cannot identify AI-authored PRs.
   - One repo, one ecosystem. Generalize with care.
+- **Reproducibility:** publish the query. `gh api -X GET search/issues --paginate -f
+  q='repo:raycast/extensions is:pr label:"new extension" created:2026-01-01..2026-03-31'`.
+  This audience will re-run it, and that's good.
 
 ---
 
@@ -175,13 +248,20 @@ caveats in the appendix section below. Backing detail lives in
 
 1. Line/bar: failure rate by year, all PRs (2023–2026). *Point: the 2024→2025 step.*
 2. Stacked bar: new-extension Q1 submissions, merged vs failed (2024–2026). *Point: the gap widens.*
-3. Funnel or Sankey: 988 Q1-2026 submissions → 667 dead (broken out by draft-at-death) → 321 merged.
-4. *(optional)* Timeline strip of #24105's ready↔draft ping-pong.
+3. Funnel or Sankey: 989 Q1-2026 submissions → 667 dead (split draft/non-draft) → 321 merged.
+4. **Merge rate by comment count** (Exhibit D) — the strongest single visual. Bar chart,
+   1.1% → 57.8%.
+5. Histogram: days-to-close for failures, with the 25/32-day stale markers drawn in. The
+   double hump (<1 day withdrawals, 25–60 day stale zone) tells the story without words.
+6. *(optional)* Timeline strip of #24105's ready↔draft ping-pong.
 
 ## Distribution notes
 
-- **Hook for social:** "2 out of 3 new Raycast extensions never ship. Only 3 out of 1,470 dead
-  PRs were ignored. Everyone got feedback — almost nobody finished."
+- **Hook for social:** "989 people submitted a Raycast extension last quarter. 321 shipped.
+  Zero of the 667 failures were ignored — the median one got 4 comments. They just stopped
+  replying."
+- **Alt hook:** "PRs with 0–2 comments: 1% merge rate. PRs with 7–9 comments: 58%. The gap
+  between shipping and dying is a handful of replies."
 - Angle for dev-rel readers: this is a **contributor-funnel** post. Any ecosystem with a
   review queue can run the same query and will find its own version.
 - Angle for AI/agent readers: a worked example of automating away a review loop by mining the
