@@ -53,7 +53,52 @@ Run before PR. Each layer is gardening, not engineering:
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
    - **Screenshot count ≤ 6.** The Store hard-caps `metadata/` screenshots at 6; `ray build`/`ray lint` do NOT flag an over-count, but a reviewer will bounce it. `ls metadata/*.png | wc -l` and trim to the 6 most distinct before submitting.
-   - **README images must live OUTSIDE `metadata/`.** `metadata/` is the Store-listing screenshot folder; a README that embeds `![...](metadata/screenshotN.png)` fails the submission checklist ("assets used by the README are placed outside of the `metadata` folder") and a reviewer will bounce it. Either move the image to a repo-root path or drop the embed. `grep -o 'metadata/[^)]*' README.md` must return nothing. (Hit on reddit-search #29703, 2026-07-23 — caught only at PR time, forcing a re-publish.)
+   - **README images go in top-level `media/` — not `metadata/`, and not `assets/`.** Three folders,
+     three jobs; mixing them fails the checklist two different ways:
+
+     | Folder | Holds | Bundled into the built extension? |
+     | --- | --- | --- |
+     | `metadata/` | Store-listing screenshots **only** | no (listing only) |
+     | `assets/` | **runtime** files the extension loads (512×512 icon, images used in code) | **YES** |
+     | `media/` | README / docs images | no |
+
+     - Embedding `![...](metadata/…)` fails the submission checklist verbatim — *"assets used by the
+       README are placed outside of the `metadata` folder"* — and a reviewer will bounce it.
+     - Parking them in `assets/` clears *that* rule but creates a quieter one: `assets/` ships inside
+       the extension, so a 1.6 MB README screenshot is downloaded by **every user, forever**. The Store
+       docs also say to "remove unused icon assets." Don't trade a visible violation for a payload.
+     - **Assert BOTH — the `metadata/` grep alone is not sufficient:**
+       ```bash
+       grep -o 'metadata/[^)]*' README.md                    # must be EMPTY
+       grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' README.md   # must be EMPTY (runtime folder)
+       ```
+       Fix by moving the files to `media/` and re-pointing the embeds, or drop the embeds.
+     - (Hit on reddit-search #29703, 2026-07-23 — caught only at PR time, forcing a re-publish. The
+       `assets/` half was added 2026-07-25: `get-app-icon`'s pre-flight moved README images out of
+       `metadata/` **into `assets/`**, satisfying the rule as written while silently adding 3.3 MB to
+       the bundle. The old wording — "move the image to a repo-root path" — permits exactly that
+       mistake, which is why the destination is now named explicitly.)
+     - **Known fleet debt (swept 2026-07-25, unfixed at time of writing).** Six extensions fail this,
+       so treat it as the default state of an older extension rather than a rare slip:
+       - embed `metadata/` images → `at-profile`, `craftdocs`, `ios-apps`, `screenocr`, `store-updates`
+       - embeds an `assets/` image (ships to users) → `tesla-energy`
+
+       Each will bounce, or quietly bloat, on its next submission. Re-run the sweep across the fleet
+       with:
+       ```bash
+       for d in raycast-*/; do r="${d}README.md"; [ -f "$r" ] || continue
+         m=$(grep -o 'metadata/[^)]*' "$r" | head -1)
+         a=$(grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' "$r" | head -1)
+         [ -n "$m$a" ] && printf '%s  metadata:%s  assets:%s\n' "${d%/}" "${m:-—}" "${a:-—}"
+       done
+       ```
+   - **Screenshot + icon dimensions — assert, don't eyeball.** The Store requires screenshots at
+     **2000 × 1250 px (16:10), PNG**, and the extension icon at **512 × 512**. `ray build` and
+     `ray lint` check neither, so a wrong-size screenshot reaches the reviewer.
+     ```bash
+     for f in metadata/*.png; do sips -g pixelWidth -g pixelHeight "$f"; done  # want 2000 × 1250
+     sips -g pixelWidth -g pixelHeight assets/<icon>.png                       # want 512 × 512
+     ```
    - **CHANGELOG: add a NEW top entry with `{PR_MERGE_DATE}` for THIS update. Never
      touch entries that already carry a real date.** Raycast CI stamps the
      placeholder on merge; reverting an already-dated older entry (e.g. Initial
@@ -82,7 +127,25 @@ returned — paste the actual output, don't assert it:
 - [ ] `npm run lint` → exit 0
 - [ ] **house-style audit** (step 2) → zero violations, having **read `package.json`
       `platforms` first** (absent ⇒ macOS-only; see `reference/house-style.md`)
-- [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`; screenshots/README current
+- [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`, and no already-dated
+      entry was touched (diff against the published CHANGELOG)
+- [ ] **README asset folders** → BOTH greps empty. `assets/` is not an acceptable home for README
+      images — it ships to every user:
+      ```bash
+      grep -o 'metadata/[^)]*' README.md
+      grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' README.md
+      ```
+- [ ] **dimensions** → `metadata/*.png` are 2000 × 1250; the icon is 512 × 512 (`sips -g pixelWidth
+      -g pixelHeight`). Neither `ray build` nor `ray lint` checks this.
+- [ ] screenshot count ≤ 6 (`ls metadata/*.png | wc -l`)
+- [ ] **external effects were verified at their destination** — for any action in the diff whose
+      result leaves the extension (clipboard/paste, a written file, a Finder reveal, an `open`
+      handoff), someone confirmed the payload **where it lands**, not just that a success toast
+      appeared. `ship` does not run the extension, so this is a *hand-back*, not a check you
+      perform: if the diff touches such an action and no destination evidence exists, STOP and
+      send it to `develop`'s walk-the-states step. A green pre-flight is not evidence here —
+      on 2026-07-26 this exact pre-flight passed a build whose "Copy Icon" pasted a file path
+      instead of an image, because every gate it runs was genuinely green.
 
 **Any violation that needs code → STOP and hand to `develop`.** Do not fix it here and do
 not ship around it. `ship` never changes code behavior.

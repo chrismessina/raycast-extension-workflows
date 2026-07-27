@@ -157,6 +157,37 @@ Confirm it appears in Raycast, then walk the states, not just the happy path:
   Truncation and alignment defects only appear here.
 - **The ActionPanel as resolved** — open it and read the shortcuts on screen. This is the only
   way to assert the no-collision invariant; `ray lint` does not check it (see the callout above).
+- **The effect that lands OUTSIDE the extension** — clipboard, pasteboard, a written file, a
+  Finder reveal, a `open` handoff. **A green toast is not evidence the effect worked.** Every
+  other state above is verified by *looking at Raycast*; these are the ones where the UI can be
+  entirely correct and the result still wrong, because the payload left the app. Verify at the
+  destination — paste into a real app, `file` the written path, confirm Finder selected the item.
+
+  > **This is the class of bug that got through everything on 2026-07-26.** `get-app-icon`'s
+  > "Copy Icon" ran `Clipboard.copy({ file: tmp })` and then deleted `tmp` in a `finally`.
+  > `Clipboard.copy({ file })` writes a `public.file-url` — a *pointer*, like copying in Finder,
+  > not the pixels — so removing the file emptied the clipboard and pasting produced the path as
+  > text. It passed `tsc`, `ray lint`, `ray build`, the House Style audit, an adversarial Codex
+  > review, and three review-bot passes. Chris found it in one paste. Nothing static could see
+  > it: both lines are individually correct, and the defect lives in their interaction with
+  > macOS pasteboard semantics.
+  >
+  > **Rule of thumb: if a temp file backs a clipboard/paste action, do not delete it — or put
+  > the DATA on the pasteboard instead** (`public.png` + `public.tiff`), which is what the fix
+  > did. Fleet check on 2026-07-26 found `central-icon-system` and `google-books` using the same
+  > `Clipboard.copy({ file })` shape; both are correct *because* they never delete the temp file
+  > (they leak it instead). Only `get-app-icon` added the "tidy" `unlink` and broke.
+
+  **How to verify without Chris's hands.** A one-off Swift script reads back what a consumer
+  actually gets, and needs no GUI:
+  ```bash
+  xcrun swift -e 'import AppKit
+  let pb = NSPasteboard.general
+  print("types:", pb.types?.map { $0.rawValue } ?? [])
+  print("image:", NSImage(pasteboard: pb).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "NONE")'
+  ```
+  For a written file, `file <path>` and `sips -g pixelWidth -g pixelHeight <path>` assert type and
+  dimensions. Run the action, then run the probe — don't infer the result from the toast.
 
 Then stop the dev process before handing off (a running `ray develop` holds the extension in a
 dev state in Raycast).
@@ -166,6 +197,17 @@ dev state in Raycast).
 and neither is a green build alone. Where a step genuinely needs Chris's hands (a real account,
 a device, a paid API), say exactly that and hand him the steps with real paths rather than
 asserting it passed.
+
+**For an external effect, the report must name the destination evidence, not the action.**
+"Copy Icon works" is an assertion; *"pasted into Notes → 512×512 image"* or the pasteboard probe's
+output is a report. If you could not reach the destination yourself, say so plainly and give Chris
+the exact paste/open target — do not let a green toast stand in as proof.
+
+> **Be rigorous when writing, not only when challenged.** The 2026-07-26 clipboard bug was
+> disproved-and-fixed using the *same* one-off Swift probe technique already used earlier that
+> day to adjudicate a disputed review finding. The technique was reached for to win an argument
+> and not to check new code. If a change touches a system API whose result the type checker
+> cannot see, probe it at the time of writing — that is precisely where `tsc` has nothing to say.
 
 ## House Style (applies to all three intents)
 
