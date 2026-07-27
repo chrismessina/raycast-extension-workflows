@@ -109,6 +109,60 @@ drift is invisible until runtime.
 
 ---
 
+## P2 — README images in the wrong folder (bounces or bloats the next submission)
+
+Added 2026-07-27 from `get-app-icon`'s pre-flight (PR
+[raycast/extensions#29739](https://github.com/raycast/extensions/pull/29739), merged
+2026-07-27). Three folders, three jobs — and two distinct ways to get it wrong:
+
+| Folder | Holds | Bundled into the built extension? |
+| --- | --- | --- |
+| `metadata/` | Store-listing screenshots **only** | no |
+| `assets/` | **runtime** files the extension loads (icon, images used in code) | **YES** |
+| `media/` | README / docs images | no |
+
+**Embedding `metadata/` images fails the submission checklist verbatim** — *"assets used
+by the README are placed outside of the `metadata` folder"* — and a reviewer will bounce
+it (hit on reddit-search #29703, 2026-07-23, forcing a re-publish):
+
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-at-profile/README.md`
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-craftdocs/README.md`
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-ios-apps/README.md`
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-screenocr/README.md`
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-store-updates/README.md`
+
+**Embedding an `assets/` image passes that rule but ships the file to every user** —
+`assets/` is bundled, so a README screenshot is downloaded by everyone, forever. The Store
+docs also say to "remove unused icon assets":
+
+- `/Users/messina/Developer/GitHub/chrismessina/raycast-tesla-energy/README.md` →
+  `assets/menubar-extension.png`
+
+**Fix:** move the file to a top-level `media/` folder and re-point the embed, or drop the
+embed. `get-app-icon` is the worked example — note it briefly went `metadata/` → `assets/`
+first, which cleared the stated rule while silently adding 3.3 MB to the bundle. That is
+why the `ship` rule now names `media/` explicitly rather than "a repo-root path."
+
+**This is a docs-only change** — no code, so it does not need `develop`. It can ride along
+with the next `ship` for each extension rather than justifying a dedicated pass, *except*
+where the repo has no other pending work.
+
+Re-run the sweep (the assertion now in `ship`'s pre-flight):
+
+```bash
+cd /Users/messina/Developer/GitHub/chrismessina
+for d in raycast-*/; do r="${d}README.md"; [ -f "$r" ] || continue
+  m=$(grep -o 'metadata/[^)]*' "$r" | head -1)
+  a=$(grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' "$r" | head -1)
+  [ -n "$m$a" ] && printf '%s  metadata:%s  assets:%s\n' "${d%/}" "${m:-—}" "${a:-—}"
+done
+```
+
+Verified 2026-07-27: the six above, and `get-app-icon` correctly absent since its fix
+shipped.
+
+---
+
 ## P3 — `any` casts
 
 `raycast-parallel-web-tools` (6) · `raycast-craftdocs` (2) · `raycast-airbuddy` (1) ·
@@ -174,3 +228,22 @@ the moment another extension starts doing so. Background:
 
 Each of these is a `raycast-extensions:develop` job (they change code), and each should
 exit through `ship` — every one of these extensions is published.
+
+**The README-folder item is the exception, and the cheapest thing on this list.** It is
+docs-only (move a file, re-point one embed), needs no `develop` pass, and each fix is
+minutes rather than a session.
+
+Conveniently, **all six affected extensions already appear elsewhere on this list**, so
+none needs a dedicated trip:
+
+| Extension | Also needs |
+| --- | --- |
+| `at-profile` | Copy-Error toasts |
+| `craftdocs` | Copy-Error toasts · `any` casts |
+| `ios-apps` | Copy-Error toasts · hand-defined `Preferences` |
+| `screenocr` | Copy-Error toasts · no test suite |
+| `store-updates` | Windows shortcuts (P1) · Copy-Error toasts |
+| `tesla-energy` | Windows shortcuts (P1) |
+
+So fold the README move into whichever `develop` pass opens each repo, and let it exit
+through `ship` with the rest. No separate sweep required.
