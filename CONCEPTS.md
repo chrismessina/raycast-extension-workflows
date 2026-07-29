@@ -39,3 +39,5 @@ A rule whose compliance depends on remembering to run the audit is a weak rule; 
 
 ### Standalone mirror
 A per-extension repository that mirrors one self-authored extension's source outside the shared extensions monorepo, used so the extension can be developed in isolation and synced into a fork of the monorepo when submitting an update. A mirror exists only after the extension has been published at least once — creating one is a post-publication step, never a prerequisite for a first submission — so any procedure that reconciles a mirror against its published version is inapplicable to an extension that has never shipped.
+
+A mirror is **downstream of the published copy, never authoritative over it**: the monorepo has two writers, since anyone's PR can be merged upstream without ever touching the mirror. Because the sync that closes that loop is push-model — it runs only when something upstream dispatches it — its failure mode is silence, not an error. A stale mirror is indistinguishable from a current one by inspection, so freshness must be established by comparing content against the published copy rather than assumed from a clean working tree.
