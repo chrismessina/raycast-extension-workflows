@@ -139,9 +139,48 @@ Run before PR. Each layer is gardening, not engineering:
    > Raycast CI **recompresses screenshots on merge**, so the published copy is smaller
    > than what you submitted and your mirror never learns about it. Verified 2026-07-28 on
    > `get-app-icon`: upstream `metadata/get-app-icon-1.png` is 1,021,474 bytes against
-   > 1,619,195 locally — same image, CI-optimized. Adopt the upstream (smaller) copies
-   > rather than re-uploading yours, or every publish silently re-inflates the repo.
-   > A name-only gate could never see this: the filenames match perfectly.
+   > 1,619,195 locally — same image, CI-optimized. A name-only gate could never see this:
+   > the filenames match perfectly.
+
+   **PNG triage — never blanket-adopt, and never blanket-keep.** "Adopt the upstream
+   copies" is right for a recompression and **destroys a screenshot the user just
+   replaced.** Both cases look identical to `diff`: same name, same dimensions, upstream
+   smaller. Size is *not* the discriminator — a new screenshot of a similar-looking
+   screen is also ~1.6 MB against a ~1.0 MB published copy.
+
+   **The discriminator is the pixels, compared against `HEAD` — not against each other.**
+   Normalize through `sips` to strip the PNG container/compression layer, then ask which
+   side matches the committed baseline:
+
+   ```bash
+   for f in $(git ls-files 'metadata/*.png' 'media/*.png'); do
+     git show "HEAD:$f" > /tmp/h.png 2>/dev/null || continue
+     n() { sips -s format png --out "/tmp/n.png" "$1" >/dev/null 2>&1 && shasum -a256 < /tmp/n.png | cut -c1-16; }
+     ph=$(n "$PUB_DIR/$f"); hh=$(n /tmp/h.png); lh=$(n "$f")
+     if   [ "$lh" != "$hh" ]; then echo "NEW SHOT   $f — user replaced it; KEEP LOCAL"
+     elif [ "$ph" != "$hh" ]; then echo "RECOMPRESS $f — same pixels, CI-optimized; ADOPT UPSTREAM"
+     else                          echo "IDENTICAL  $f"
+     fi
+   done
+   ```
+
+   | Verdict | Meaning | Action |
+   | --- | --- | --- |
+   | `NEW SHOT` | local pixels ≠ `HEAD` — the user changed the image | **keep local**; adopting would discard their work |
+   | `RECOMPRESS` | local pixels == `HEAD`, published differs | **adopt upstream** (`cp "$PUB_DIR/$f" "$f"`) — saves re-inflating |
+   | `IDENTICAL` | all three agree | nothing to do |
+
+   Then assert the kept files still meet spec (`2000 × 1250`) — a replaced screenshot is
+   the most likely thing in the tree to be the wrong size.
+
+   *(2026-07-29, `get-app-icon`: five images differed. Three were pure recompression —
+   adopting them saved 1.9 MB of pointless churn, and they correctly showed **no diff** in
+   the resulting PR. Two were screenshots the user had just updated that morning; the
+   blanket "adopt upstream" this file previously prescribed would have silently reverted
+   them, and the PR would have shipped the old screens. The same two then reappeared as
+   merge conflicts during `pull-contributions` — see the CHANGELOG/PNG conflict protocol
+   in the `pull-contributions` section — where "take theirs" is wrong for the identical
+   reason.)*
 
    **Either STOP condition → hand to `develop`'s staleness gate for reconciliation.** Do
    not publish. A standalone mirror advances only if its sync workflow ran; other people
@@ -319,6 +358,27 @@ Run before PR. Each layer is gardening, not engineering:
      flagged exactly this — it only came out right because CI/maintainer preserved
      the old date. Don't rely on that.) Diff the CHANGELOG against the published one
      and confirm only the new entry differs.
+
+     **Assert it — the placeholder count is the whole check.** Exactly one
+     `{PR_MERGE_DATE}` may exist, and it must be on the **top** entry. Every heading
+     below it must already carry a real date, byte-identical to the published copy:
+
+     ```bash
+     # 1. exactly one placeholder, and it is the FIRST heading
+     n=$(grep -c '{PR_MERGE_DATE}' CHANGELOG.md)
+     first=$(grep -nE '^## \[' CHANGELOG.md | head -1)
+     [ "$n" -eq 1 ] || echo "FAIL: $n placeholders (want exactly 1)"
+     echo "$first" | grep -q '{PR_MERGE_DATE}' || echo "FAIL: top entry is not the placeholder"
+
+     # 2. every OTHER heading matches the published file exactly
+     diff <(grep -E '^## \[' "$PUB_DIR/CHANGELOG.md") \
+          <(grep -E '^## \[' CHANGELOG.md | grep -v '{PR_MERGE_DATE}') \
+       && echo "history intact" || echo "FAIL: an already-dated entry changed"
+     ```
+
+     Both must pass. `2` placeholders means a shipped entry got reverted — the exact
+     defect this rule exists to prevent, and it is invisible on casual reading because
+     the two headings look alike.
 
 ## HARD GATE — no PR without a green pre-flight
 
@@ -560,6 +620,72 @@ the three steps verbatim (open the fork → **Sync fork** dropdown → **Update
 branch**), then **re-run `npm run publish`** once they confirm. Nothing is wrong with
 the code; don't start debugging the extension.
 
+**Known failure — `checking for new contributions` → run `pull-contributions`, then resolve
+the SAME two conflicts every time.** `ray publish` stops with:
+
+> `error - checking for new contributions` … *"some contributions are available. Pull them
+> using `npx @raycast/api@latest pull-contributions`"*
+
+This is routine, not a problem with your code. **Before running it, prove your work is
+recoverable and find out whether there is a real contribution at all:**
+
+```bash
+# 1. Commit first. pull-contributions starts a MERGE in your working tree.
+git status --porcelain    # must be clean; commit before proceeding
+
+# 2. Is there actually an upstream change to THIS extension? Compare blob SHAs;
+#    a diverged fork `main` carrying unrelated commits is the usual cause and is harmless.
+for f in $(git ls-files); do
+  fk=$(gh api "repos/chrismessina/extensions/contents/extensions/$EXT/$f?ref=main" --jq .sha 2>/dev/null)
+  up=$(gh api "repos/raycast/extensions/contents/extensions/$EXT/$f?ref=main"   --jq .sha 2>/dev/null)
+  [ -n "$fk" ] && [ "$fk" != "$up" ] && echo "REAL CONTRIBUTION: $f"
+done
+echo "(no output = fork and upstream agree; the merge will be pure noise)"
+```
+
+Then `npx @raycast/api@latest pull-contributions --non-interactive` (there is **no
+`--dry-run`**). It leaves a merge in progress. **Two conflict classes recur every single
+time, and the naive resolution is wrong for both:**
+
+| Conflicted file | ❌ Wrong | ✅ Right |
+| --- | --- | --- |
+| `CHANGELOG.md` | `--ours` | **theirs for the history, ours for the new entry** |
+| `metadata/*.png`, `media/*.png` | `--theirs` | **ours** when the user replaced the shot; theirs when it's a recompression (run the PNG triage above) |
+
+**CHANGELOG — never `git checkout --ours`.** Your side holds `{PR_MERGE_DATE}` on entries
+that *already shipped*; their side holds the real dates. Taking ours re-stamps shipped
+history with today's date. Don't hand-edit the conflict markers either — diff3 base
+markers (`||||| <sha>`) make a naive parse produce duplicate headings. **Rebuild from the
+two known-good sources instead:**
+
+```bash
+python3 - <<'PY'
+import io, subprocess
+head   = subprocess.run(["git","show","HEAD:CHANGELOG.md"],capture_output=True,text=True,check=True).stdout
+theirs = subprocess.run(["git","show","MERGE_HEAD:CHANGELOG.md"],capture_output=True,text=True,check=True).stdout
+# The first heading that exists on THEIR side is where your new entry stops.
+import re
+m = re.search(r'^## \[.*$', theirs, re.M)
+marker = m.group(0)
+io.open("CHANGELOG.md","w",encoding="utf-8").write(head[:head.index(marker)] + theirs[theirs.index(marker):])
+PY
+# Verify BOTH halves came from where you think they did:
+diff <(git show HEAD:CHANGELOG.md | sed -n "1,$(( $(grep -n '^## \[' CHANGELOG.md | sed -n 2p | cut -d: -f1) - 1 ))p") \
+     <(sed -n "1,$(( $(grep -n '^## \[' CHANGELOG.md | sed -n 2p | cut -d: -f1) - 1 ))p" CHANGELOG.md) \
+  && echo "new entry matches your commit"
+grep -c '{PR_MERGE_DATE}' CHANGELOG.md   # must be exactly 1
+```
+
+Then re-run the three gates (`tsc` / `build` / `lint`) **before** `git commit --no-edit` —
+the tree changed, so the earlier green is stale. Sealing a merge you have not re-verified
+is how a broken tree reaches the PR.
+
+*(2026-07-29, `get-app-icon` #29845: this blocked the publish, and all three conflicts were
+in this table — the CHANGELOG plus the two screenshots the user had replaced that morning.
+`--ours` on the CHANGELOG would have re-dated the shipped July 27 entry; `--theirs` on the
+PNGs would have reverted the new screenshots. Neither is detectable after merge without
+re-reading the published copy.)*
+
 **Known failure — wrong PR base / diverged fork main → huge diff (verify after every publish).**
 `ray publish` sometimes opens the PR against **`chrismessina:main` (the fork) instead of
 `raycast/extensions:main` (upstream)**. Worse, Chris's fork `main` periodically diverges
@@ -613,11 +739,43 @@ ls .github/workflows/ && gh run list --limit 3
 
 *(Do not restate inbound automation's state here. An earlier draft of this section
 asserted "no live auto-sync exists," which contradicted both the mirror reference and
-this skill's own post-merge step 2. Verified 2026-07-28: `get-app-icon` has a working
-`sync-from-upstream.yml` — last run succeeded. Note it is `workflow_dispatch`, so it is
-**automated but manually triggered**, not scheduled: it will not have run on its own
-after a merge. That distinction is why this state belongs in one place and is checked,
-not remembered.)*
+this skill's own post-merge step 2. That is why this state belongs in one place and is
+**checked**, not remembered — read the triggers, don't recall them.)*
+
+**Check the TRIGGERS, not just that the file exists.** A `sync-from-upstream.yml` that is
+dispatch-only has to be fired by something, and when that something is broken the mirror
+drifts silently for months — which then shows up as staleness-gate work in every ship
+session, long after the cause is forgettable.
+
+```bash
+sed -n '/^on:/,/^jobs:/p' .github/workflows/sync-from-upstream.yml   # schedule? dispatch only?
+gh run list --workflow sync-from-upstream.yml --limit 5              # has it ACTUALLY run?
+```
+
+**If it is dispatch-only, add a `schedule:` — the drift is not hypothetical.** Verified
+2026-07-29 on `get-app-icon`: triggers were `repository_dispatch` + `workflow_dispatch`
+with no schedule, and `gh run list` showed **exactly one run in five months** (manual,
+2026-02-27). It never fired for the 2026-07-27 merge. A daily cron is a no-op when there
+is nothing new and removes the whole failure mode:
+
+```yaml
+on:
+  schedule:
+    - cron: "17 9 * * *"   # off the hour; daily is plenty — Store review takes days
+  repository_dispatch:
+    types: [upstream-sync]
+  workflow_dispatch:
+```
+
+Keep the dispatch trigger as the fast path for an immediate post-merge sync.
+
+**Reassurance worth stating to the user, because it looks alarming:** the sync downloads
+the extension directory recursively, so it **does** overwrite `media/` and `metadata/`.
+That is not a clobber of newly-updated screenshots *provided those screenshots are in the
+merged PR* — post-merge upstream holds the user's own images, CI-recompressed, so the sync
+replaces a local 1.6 MB copy with a byte-smaller, pixel-identical one. Confirm before
+reassuring: `gh pr diff <N> --name-only | grep -E 'media/|metadata/'`. If a local
+screenshot is **not** in the PR, the sync would revert it — publish it first.
 
 Full topology, the "what ships" allow-list, and the assets-bloat gotcha:
 `reference/my-extensions-mirror.md`.
@@ -643,9 +801,11 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
    extensions use `sync-from-upstream.yml` to reconcile the standalone mirror against the
    merged monorepo state.
 
-   **It is `workflow_dispatch`, so it does not fire on merge — you must run it.** Assuming
-   it self-triggered leaves the mirror stale, which is precisely what the staleness gate
-   then catches on the *next* session, long after the context is gone.
+   **Dispatch it explicitly rather than waiting for a schedule to come around.** Even on a
+   mirror that now has a daily `cron` (see the trigger check in Route B), firing it here is
+   what makes the mirror correct *this session* instead of tomorrow. Assuming it
+   self-triggered leaves the mirror stale, which is precisely what the staleness gate then
+   catches on the *next* session, long after the context is gone.
 
    ```bash
    ls .github/workflows/                       # confirm it exists on THIS mirror
@@ -654,9 +814,14 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
    git fetch origin main && git log --oneline -3             # confirm the merge landed
    ```
 
+   **This is the step that delivers BOTH recurring fixes at once** — the CI-recompressed
+   PNGs and the stamped CHANGELOG date arrive together, because both are produced by CI on
+   merge and live only in the monorepo until synced. If step 1 already stamped the date by
+   hand, expect the sync to be a no-op on `CHANGELOG.md` and a real change on the images.
+
    Only reconcile manually (FF/rebase) if the workflow is absent on that repo — don't
-   rebuild automation that already exists. (Open task: verify this workflow is present
-   across *all* his standalone mirrors, not just the ones you've shipped.)
+   rebuild automation that already exists. (Open task: verify this workflow is present,
+   **and scheduled**, across *all* his standalone mirrors, not just the ones you've shipped.)
 
 3. **Sweep the merged branch.** Delete the merged feature branch. Squash-merge re-SHAs, so identify merged branches by PR state (`gh pr list --head`), not git ancestry.
 
