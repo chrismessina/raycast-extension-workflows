@@ -55,6 +55,19 @@ caveats in the appendix section below. Backing detail lives in
 - The more defensible framing: **volume nearly doubled while the failure rate held**. More
   people are getting to "it works on my machine" than ever. The same share are getting stuck
   right after.
+- **Quarter-over-quarter within 2026 is flat**, and saying so out loud pre-empts the "AI slop
+  is flooding the repo *right now*" misreading:
+
+| | Q1 2026 | Q2 2026 |
+|---|---:|---:|
+| Submissions | 989 | 770 |
+| Merged | 321 | 238 |
+| Failed | 667 | 459 |
+| Still open | 1 | **73** |
+| Failure rate | 67.5% | 65.9% *(provisional)* |
+
+  - Q2 is **right-censored** — 73 PRs still open. True rate bounded at **59.6%–69.1%**; Q1's
+    67.5% falls inside it. **Report as "flat," never as "improving."**
 
 *Exhibit B — chart: new-extension PRs, Q1 by year (stacked merged/failed).*
 
@@ -233,6 +246,12 @@ disarms the "easy for you to say" reaction.*
   - Comment-count↔outcome is **correlational**; merged PRs accrue comments by progressing.
   - `comments` counts the conversation thread, not inline review comments — the real
     engagement is *higher* than reported, which only strengthens the "nobody is ignored" point.
+  - **⚠️ The two "comment" counts are not the same number.** GitHub's *search qualifier*
+    `comments:` includes inline review comments; the *issues API* field does not. Same Q1
+    query: 95 merged PRs with 3–4 comments by the API, 11 by search; 9 above 15 by the API,
+    123 by search. All comment figures in the piece are **API-derived**. Worth a one-line
+    footnote — this audience re-runs queries, and someone will hit this and think the numbers
+    are wrong. Merged/failed/draft counts cross-check exactly between the two sources.
   - Bot comments (raycastbot, greptile) are included in comment counts; the 0–2 bucket is
     therefore *"almost no human conversation."*
   - Label-scoped counts depend on maintainers applying `new extension` consistently.

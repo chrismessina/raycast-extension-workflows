@@ -90,6 +90,43 @@ stopped.
 the 520 authors with at least one failure, only **65 (12.5%)** landed any new extension in the
 same quarter.
 
+### Q2 2026 — the rate is flat, not worsening
+
+| | Q1 2026 | Q2 2026 |
+|---|---:|---:|
+| Submissions | 989 | 770 |
+| Merged | 321 | 238 |
+| Closed unmerged | 667 | 459 |
+| Still open | 1 | **73** |
+| Failure rate (of resolved) | **67.5%** | 65.9% *(provisional)* |
+| Failed & in draft | 515 (77.2%) | 324 (**70.6%**) |
+
+**Do not read Q2 as an improvement.** Q2 still has 73 open PRs against Q1's 1, so its rate is
+right-censored. The true value is bounded: if every open PR eventually fails, 69.1%; if every
+one merges, 59.6%. Q1's 67.5% sits inside that interval. **The honest conclusion is that the
+failure rate held flat quarter over quarter** — which matters, because "AI slop is making this
+worse *right now*" is the claim the data does not support. The step change was 2024→2025.
+
+> ### ⚠️ Measurement trap: two different "comment" counts
+>
+> GitHub's **search qualifier `comments:` includes inline review comments**. The **issues API
+> `comments` field does not** — it counts conversation comments only. Same quarter, same
+> query, different answers:
+>
+> | Merged Q1 PRs | API field | Search qualifier |
+> |---|---:|---:|
+> | 3–4 comments | 95 | 11 |
+> | ≥15 comments | 9 | **123** |
+>
+> The API max on any merged Q1 PR was 28; search reports 123 PRs above 15. Everything else —
+> merged, closed-unmerged, and draft counts — cross-checks **exactly** between the two sources,
+> so only this one field is affected.
+>
+> **Consequence:** the comment tables above are API-derived and internally consistent. Do not
+> extend them with search-derived numbers, and do not compare comment counts across quarters
+> unless both came from the same source. Getting the Q2 comment/time/author distributions
+> requires the API export, not a search count.
+
 > **Experience barely moves the needle — which rules out the obvious explanation.** One-PR
 > authors merged at **31.7%**; multi-PR authors at **33.5%**. If this were simply newcomers
 > not knowing the ropes, repeat contributors would do far better. They don't. What separates
