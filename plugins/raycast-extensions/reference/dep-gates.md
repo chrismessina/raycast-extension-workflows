@@ -25,6 +25,16 @@ it never needed. So each dep carries **two** gates.
 **Non-breaking bumps within a tier are `ship`'s dep hygiene. Crossing a major — floor →
 leading edge — is `develop`'s modernization intent, and it is gated on this file.**
 
+> 🚨 **`@raycast/api` is the exception: its FLOOR is not a submission target.** The Store
+> requires the **latest** API, so anything you submit must match `npm view @raycast/api
+> version` in **both** manifest and `package-lock.json` — the lockfile is what ships. The
+> floor below exists so a *migration* knows what is safe fleet-wide; it is never
+> permission to submit stale. `ship` enforces this as a blocking gate.
+>
+> The pinned versions in this table are a **snapshot, not an oracle** — they go stale by
+> definition. Check the registry at submission time; if the table disagrees with `npm
+> view`, the registry wins and this row needs updating.
+
 ## Gates
 
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |

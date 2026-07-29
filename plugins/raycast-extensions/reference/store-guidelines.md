@@ -34,6 +34,47 @@ slow-moving, and every one of them is stamped and re-checkable.
 
 2. **Audit against the fetched text**, not against recall and not against this file.
 
+2b. **Route to conditional sources by what the code actually contains.** Fetching the two
+   core pages is necessary but not sufficient — the Store rules below are easy to pass
+   over on a long page, and each maps to a **detectable signal**. Run the greps; fetch the
+   extra source only when its trigger fires. This turns "remember the whole page" into
+   "answer what the tree says."
+
+   ```bash
+   # ── Always-check signals (cheap; run all of them) ────────────────────────────
+   jq -r '.license, .platforms, (.categories|tostring)' package.json  # MIT? scope? categories?
+   ls package-lock.json                                    # required; yarn.lock is NOT
+   rg -n 'Keychain|security find-generic-password' src     # PROHIBITED — blocks submission
+   rg -n 'analytics|mixpanel|amplitude|segment|posthog|GoogleAnalytics|gtag' src  # PROHIBITED
+   rg -n 'LocalStorage\.|Cache\(' src                      # must not store secrets
+   rg -ln 'i18n|intl-messageformat|react-intl' src         # custom localization NOT allowed
+   fd -e node -e wasm -e dylib -e so -e exe . --exclude node_modules  # opaque binaries
+   ```
+
+   | Trigger (signal in the tree) | Fetch this source | What it gates |
+   | --- | --- | --- |
+   | `tools` or `ai` key in `package.json` | [AI Extensions](https://developers.raycast.com/ai/getting-started) | tool naming, confirmation, eval expectations |
+   | `mode: "menu-bar"` in any command | [Menu Bar Commands](https://developers.raycast.com/api-reference/menu-bar-commands) | title length, refresh cadence |
+   | `interval` on any command | [Background Refresh](https://developers.raycast.com/information/lifecycle/background-refresh) | allowed intervals, no user-visible side effects |
+   | bundled binary / `.node` / `.wasm` | [Prepare for Store](https://developers.raycast.com/basics/prepare-an-extension-for-store) | **provenance + integrity hash + build-from-source**; opaque or heavy binaries are rejected |
+   | a setup/login/configure *command* | [Preferences](https://developers.raycast.com/api-reference/preferences) | config belongs in `preferences`, **not** a command |
+   | any `<Action>` / `ActionPanel` | [Best Practices](https://developers.raycast.com/information/best-practices) | action titles, icons, submenus, native navigation |
+   | any `<List>` / `<Grid>` / `<Detail>` | [Best Practices](https://developers.raycast.com/information/best-practices) | loading, empty, and placeholder states |
+   | `useFetch` / `fetch` / `axios` | [Best Practices](https://developers.raycast.com/information/best-practices) | error handling, no analytics, third-party terms |
+   | third-party API or scraped source | [Prepare for Store](https://developers.raycast.com/basics/prepare-an-extension-for-store) | the service's terms must permit it |
+
+   **Hard blockers to assert explicitly** (each is a *silent* rejection — the extension
+   builds and lints clean):
+
+   - **`license` must be `MIT`** in `package.json`.
+   - **`package-lock.json` must exist and be committed** (npm only — not yarn/pnpm).
+   - **No Keychain access.** No exceptions.
+   - **No external analytics or telemetry** of any kind.
+   - **US English only**; no custom localization layer.
+   - **`platforms` must match reality** — don't claim `Windows` for a `macOS`-only
+     extension (an AppleScript/`osascript` call is macOS-only by definition).
+   - **Binaries need provenance**: source, build instructions, and an integrity hash.
+
 3. **Report** findings in three buckets, each citing the source URL:
    - **Compliant** — what already passes (say so; a silent pass reads as an audit that
      didn't run).

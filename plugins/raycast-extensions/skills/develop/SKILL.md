@@ -29,10 +29,90 @@ All three change code, so they all live here and all hand forward to `ship` when
 
 ---
 
-## Before the first edit — locate, then branch
+## Before the first edit — verify the baseline, locate, then branch
 
-Two steps, in this order, for all three intents. Neither is an interview: the brief already
-says what to build. These only establish *where* and *on what ref*.
+Three steps, in this order, for all three intents. Neither is an interview: the brief already
+says what to build. These only establish *what baseline*, *where*, and *on what ref*.
+
+0. **STALENESS GATE — diff the local tree against the PUBLISHED extension. Do this FIRST,
+   before reading code, planning, or editing.**
+
+   A standalone mirror is **not** authoritative. Other people contribute to Chris's
+   extensions directly in `raycast/extensions`, and the mirror only advances if a sync
+   workflow ran and succeeded. When it hasn't, the local tree is a stale snapshot that
+   *looks* complete — nothing about it announces that a whole command is missing.
+
+   **Compare file *content*, not just names.** An upstream bugfix inside a file you also
+   have is invisible to a name-only check, and is the case that silently loses someone
+   else's work. **Fail closed:** a fetch that fails must abort, never fall through to
+   "no differences found."
+
+   ```bash
+   set -euo pipefail
+   EXT="$(jq -r .name package.json)"
+
+   # Per-run temp dir — shared /tmp paths collide between concurrent runs.
+   WORK="$(mktemp -d "${TMPDIR:-/tmp}/staleness-$EXT.XXXXXX")"
+   trap 'rm -rf "$WORK"' EXIT
+
+   if ! gh api "repos/raycast/extensions/contents/extensions/$EXT" >/dev/null 2>&1; then
+     echo "NOT PUBLISHED — no baseline; skip this gate"
+   else
+     git -C "$WORK" init -q
+     git -C "$WORK" remote add origin https://github.com/raycast/extensions.git
+     git -C "$WORK" config core.sparseCheckout true
+     git -C "$WORK" sparse-checkout init --cone
+     git -C "$WORK" sparse-checkout set "extensions/$EXT"
+     git -C "$WORK" fetch -q --depth 1 --filter=tree:0 origin main
+     git -C "$WORK" checkout -q FETCH_HEAD
+
+     PUB_DIR="$WORK/extensions/$EXT"
+
+     # FAIL-CLOSED ASSERTION — `set -e` alone is NOT enough (a pipeline swallows the
+     # fetch's exit status). Without this, a failed fetch reaches `diff` and can report
+     # a clean tree. See ship/SKILL.md for the verified failure mode.
+     [ -d "$PUB_DIR" ] && [ -n "$(ls -A "$PUB_DIR")" ] || {
+       echo "ABORT: baseline fetch failed or is empty — cannot prove freshness."
+       exit 1
+     }
+
+     diff -r -q \
+       -x node_modules -x .git -x dist -x .DS_Store \
+       -x raycast-env.d.ts -x '.prettierrc*' -x '.eslintrc*' \
+       "$PUB_DIR" . \
+       && echo "IN SYNC — no content differences" \
+       || echo "^^^ review every line above"
+   fi
+   ```
+
+   | Output line | Meaning | Action |
+   | --- | --- | --- |
+   | `Only in <PUB_DIR>…` | upstream has a file you do not | **STOP** — stale |
+   | `Files … differ` | upstream *edited* a file you also have | **STOP** — stale |
+   | `Only in .` | your own local work | expected |
+
+   **Either STOP condition means the tree is stale.** Do not edit, do not plan against the
+   local code. Reconcile first: adopt the published version as the baseline, then re-apply
+   local work on top, checking each change against what the published version already
+   fixed. (`metadata/*.png` differing is usually Raycast CI's screenshot recompression —
+   adopt the smaller upstream copies; see `ship`'s note.)
+
+   **Why this is step 0 and not a pre-flight item.** `ship`'s pre-flight catches it too —
+   but only *after* the work is done, which is exactly how it surfaced on 2026-07-28 on
+   `raycast-store-updates`: a full session of fixes was built on a tree missing a shipped
+   menu-bar command and a `githubToken` preference. Publishing that diff would have
+   **deleted both from the Store**, and five of the session's fixes duplicated work a
+   contributor had already merged. Catching it at the gate costs one `curl`; catching it at
+   `ship` costs the whole session.
+
+   **Corollary — a contributor's fix may be better than yours.** When reconciling, compare
+   rather than assume: that same day the contributor's rate-limit handling (throw to preserve
+   `keepPreviousData`, read `X-RateLimit-Remaining`) was strictly better than the local one,
+   and the right move was to drop the local version. **But re-verify what you adopt** —
+   taking their `parseResponse` wholesale silently re-introduced a bare-403 misclassification
+   the local version had already fixed, and re-introduced a `⌘⇧C` ActionPanel collision.
+   Adopting a superset is not the same as adopting every line in it: re-run the house-style
+   assertions **after** reconciling, not just before.
 
 1. **Resolve the extension root and `cd` there.** The directory whose `package.json` carries
    Raycast keys (`commands`, `title`, `icon`) — which is the repo root for a standalone
@@ -144,6 +224,83 @@ outsourced back to him, and it comes back as a numbered list.
 ```bash
 npm run dev        # or `ray develop` — whichever the repo defines
 ```
+
+> **A `package.json` PREFERENCE change needs a Raycast RESTART, not a hot-reload.**
+> `ray develop` rewrites the manifest and recompiles the JS, but Raycast caches the
+> **preferences schema** and keeps serving the previous version: renamed titles/labels
+> still show their old text, and a newly added preference is **absent from the pane
+> entirely**. Nothing looks broken — the deploy succeeded, `ray lint` passes, and
+> `diff <(jq -S .preferences package.json) <(jq -S .preferences <deployed>/package.json)`
+> comes back identical. It reads exactly like "my manifest edit didn't work."
+>
+> **Don't debug the manifest — quit and reopen Raycast.** Verify first that source and
+> deployed agree; if they do, the discrepancy is the cache, and only a restart clears it.
+> Code-only changes (a `.tsx` edit) hot-reload normally and need no restart.
+>
+> ⚠️ **A restart clears preference VALUES that were entered but never committed** — a
+> pasted token and a flipped toggle can both come back blank. Warn before suggesting a
+> restart, and expect to ask him to re-enter secrets afterwards.
+>
+> *(2026-07-28: a renamed `trackReadStatus` label and a newly-promoted `menuBarScope`
+> both stayed invisible across several hot-reloads. Chris restarted Raycast and both
+> appeared immediately — and his GitHub token and GraphQL toggle were reset.)*
+>
+> **Chris runs BOTH Raycast apps, and they read different extension directories.** A dev
+> deploy lands in exactly one of them, so the default target is a coin flip against which
+> app he actually has open:
+>
+> | App | Extension dir | Dev command |
+> |---|---|---|
+> | `Raycast.app` (stable) | `~/.config/raycast/extensions/` | `npm run dev` |
+> | `Raycast Beta.app` | `~/.config/raycast-x/extensions/` | `npm run dev -- --target=x` |
+>
+> **Ask which app he's testing in, or pass `--target=x` when it's Beta.** The failure is
+> loud but misdirecting: the app whose directory *wasn't* targeted still sees a leftover
+> manifest, advertises the command, and then throws **`Error: Missing executable. You might
+> need to build the extension.`** from `RaycastDesktopApp.bundle` — while the *other* app
+> runs the same extension perfectly. Two contradictory symptoms, one cause. Read the
+> **app name in the stack trace** (`Raycast Beta.app` vs `Raycast.app`) to tell which
+> directory Raycast was reading; that names the target you needed.
+>
+> Confirm the deploy actually completed before believing "built extension successfully" —
+> the compiled JS must exist in the *targeted* dir:
+> ```bash
+> find ~/.config/raycast-x/extensions/<ext> ~/.config/raycast/extensions/<ext> -name '*.js' 2>/dev/null
+> ```
+>
+> *(2026-07-28: `ray develop` reported success while deploying to stable; Beta was the app
+> under test and showed a red menu-bar triangle. Chris diagnosed it himself and fixed it
+> with `-- --target=x`.)*
+
+> 🚨 **NEVER background `ray develop` and then `pkill` it.** It is a long-lived watcher that
+> deploys **incrementally**: it writes `package.json` and `assets/` first, then compiles the
+> command JS. Killing it after a fixed `sleep` leaves the install **half-written** — manifest
+> present, `*.js` absent — which fails in the most misleading way possible:
+> - Raycast reads the manifest, so the command still *appears* in the root search.
+> - Preferences render from the **stale/partial** manifest, so newly added preferences are
+>   missing from the pane and it looks like your `package.json` edit didn't work.
+> - The command cannot execute, and any error surfaces from the **previous** build still in
+>   memory — so the stack trace points at a `.js` file that no longer exists on disk.
+>
+> Verify with `find ~/.config/raycast-x/extensions/<ext> -name '*.js'` (or the
+> `com.raycast.macos` equivalent): **no `.js` means the deploy never finished.**
+>
+> `ray develop` also *removes* the dev install when it exits cleanly, so "start it, sleep,
+> kill it" is not a way to leave a testable build behind — it is a way to leave a broken one.
+>
+> **What to do instead.** An agent cannot hold a foreground watcher across tool calls, so:
+> - Use `npm run build` (+ `tsc --noEmit`, `ray lint`) for *your* verification loop — that is
+>   what you can actually assert on.
+> - When the change needs to be exercised in Raycast, **hand Chris the command and let him
+>   run it in his own terminal**, where it stays alive. Say so explicitly rather than
+>   claiming you "ran it in Raycast."
+> - If you must launch it yourself, run it in the background and **leave it running** for the
+>   rest of the session; do not `pkill` it as cleanup.
+>
+> *(Observed 2026-07-28 on `raycast-store-updates`: three consecutive `ray develop` →
+> `sleep 30` → `pkill` cycles left an install with `package.json` + `assets/` and zero `.js`.
+> Chris reported "I'm not seeing the PAT preference" and "I can't activate the menu bar
+> item" — both were this, not the code. Every gate was green the whole time.)*
 
 Confirm it appears in Raycast, then walk the states, not just the happy path:
 

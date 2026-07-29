@@ -3,12 +3,10 @@ name: scaffold
 description: Ideate and scaffold a NET-NEW Raycast extension — when no extension exists yet and you need to shape the idea, pick the command type, and lay down the manifest + first command. Fires on "create / start / scaffold a new Raycast extension." Hands off to `develop` once files exist. Do NOT use to change an existing extension (that's `develop`).
 metadata:
   stage: "1 — ideate + scaffold net-new"
-  status: stub
+  status: complete
 ---
 
 # scaffold
-
-> **STUB — authored to first-draft depth.** Deep authoring pending. The design contract is fixed; the prose below is the skeleton.
 
 ## When this fires vs. not
 
@@ -25,7 +23,77 @@ The seam is **binary on existence**, so triggers never overlap with `develop`.
    - API capabilities and limits (what Raycast can/can't do for this idea).
    - Single-command vs multi-command shape.
 
-   *(Overlay content to be drawn from the Craft Raycast docs MCP — `https://mcp.craft.do/links/CSd4xy0mQPc/mcp` — at authoring time. See `docs/shelf.md` and the design spec.)*
+   **Source the overlay from the live docs, not from memory** — same rule as every other
+   skill here. Use `reference/store-guidelines.md`'s step 1 (context7 →
+   `/llmstxt/developers_raycast_llms-full_txt`, `WebFetch` fallback). Scope one question
+   per call, e.g. *"when to use a menu-bar command vs a view command"*.
+
+   *(This previously pointed at `docs/shelf.md` and a Craft MCP endpoint. Neither is
+   reachable: `docs/shelf.md` does not exist in this repo — verified 2026-07-28 — and the
+   MCP is not wired into this workspace. A step that depends on unavailable material is a
+   step that silently doesn't run.)*
+
+## Compliance gate — BEFORE generating files
+
+**A net-new extension is the only path into the fleet that no other skill audits.**
+`develop` assumes the extension exists; `ship`'s pre-flight runs at submission, by which
+point a wrong *product shape* (config-as-a-command, a Windows claim on a macOS-only
+extension, a non-MIT license) is expensive to undo. Catch it here.
+
+1. **Fetch the Store rules** — `reference/store-guidelines.md`, steps 1 and 2b. Run 2b's
+   conditional router against the *intended* shape: planning a menu-bar command means
+   fetching the menu-bar page **now**, not after it's written.
+2. **Decide and write down**, before any file exists:
+   - command mode(s) — `view` / `no-view` / `menu-bar` / AI `tools`
+   - `platforms` — claim **only** what you'll actually support (an `osascript` call is
+     macOS-only; don't list `Windows`)
+   - `categories` — from the Store's fixed list
+   - every piece of user config → a `preferences` entry. **Never a setup command.**
+
+## Scaffold procedure (executable)
+
+```bash
+mkdir -p raycast-<name> && cd raycast-<name>
+npm init -y
+npm install --save-exact @raycast/api@latest      # latest, not a floor — the Store requires it
+npm install --save-dev @raycast/eslint-config eslint prettier typescript @types/node @types/react
+```
+
+Then write the manifest. **These fields are required and are what a reviewer checks
+first** — `name` must be the kebab-case Store slug and match the directory:
+
+```jsonc
+{
+  "name": "<kebab-case-slug>",
+  "title": "<Human Title>",
+  "description": "<one sentence, specific — not 'a Notion extension'>",
+  "icon": "icon.png",                    // 512×512 PNG in assets/
+  "author": "chrismessina",
+  "license": "MIT",                      // MIT is REQUIRED
+  "platforms": ["macOS"],                // only what you support
+  "categories": ["Productivity"],
+  "commands": [{ "name": "index", "title": "…", "description": "…", "mode": "view" }],
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "fix-lint": "ray lint --fix",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
+```
+
+**Verify before handing off — all four must pass:**
+
+```bash
+ls package-lock.json                  # REQUIRED by the Store; npm only, never yarn/pnpm
+npx tsc --noEmit                      # build/lint do NOT typecheck
+npm run build
+npm run lint
+```
+
+A scaffold that hasn't built and linted is not a scaffold — it's a guess. Do not hand to
+`develop` until all four are green.
 
 ## Output location
 
