@@ -55,7 +55,17 @@ says what to build. These only establish *what baseline*, *where*, and *on what 
    WORK="$(mktemp -d "${TMPDIR:-/tmp}/staleness-$EXT.XXXXXX")"
    trap 'rm -rf "$WORK"' EXIT
 
-   if ! gh api "repos/raycast/extensions/contents/extensions/$EXT" >/dev/null 2>&1; then
+   # Distinguish a REAL 404 from a failed request — rate limit / network must ABORT.
+   HTTP="$(gh api "repos/raycast/extensions/contents/extensions/$EXT" \
+            --silent --include 2>/dev/null | head -1 | grep -oE '[0-9]{3}' | head -1)"
+   case "$HTTP" in
+     200) PUBLISHED=yes ;;
+     404) PUBLISHED=no  ;;
+     *)   echo "ABORT: baseline lookup returned '${HTTP:-no response}' — cannot prove freshness."
+          exit 1 ;;
+   esac
+
+   if [ "$PUBLISHED" = no ]; then
      echo "NOT PUBLISHED — no baseline; skip this gate"
    else
      git -C "$WORK" init -q
@@ -79,17 +89,32 @@ says what to build. These only establish *what baseline*, *where*, and *on what 
      diff -r -q \
        -x node_modules -x .git -x dist -x .DS_Store \
        -x raycast-env.d.ts -x '.prettierrc*' -x '.eslintrc*' \
-       "$PUB_DIR" . \
-       && echo "IN SYNC — no content differences" \
-       || echo "^^^ review every line above"
+       "$PUB_DIR" .
+     case $? in
+       0) echo "IN SYNC — no content differences" ;;
+       1) echo "DIFFERENCES — classify each line below" ;;
+       *) echo "ABORT: diff failed (exit 2 = operational error, not a difference)."; exit 1 ;;
+     esac
    fi
    ```
+
+   > ⚠️ **Branch on `diff`'s exit status; never `&& … || …`.** Exit 2 (comparison failed)
+   > and exit 1 (differences found) otherwise collapse into the same message.
 
    | Output line | Meaning | Action |
    | --- | --- | --- |
    | `Only in <PUB_DIR>…` | upstream has a file you do not | **STOP** — stale |
-   | `Files … differ` | upstream *edited* a file you also have | **STOP** — stale |
+   | `Files … differ` | **ambiguous** — upstream edited it, *or* you did | **classify it** (below) |
    | `Only in .` | your own local work | expected |
+
+   **Classify every `differ` line before deciding.** In `develop` you are usually at a
+   clean-ish HEAD, so the cheap test is whether the published blob equals your `HEAD`:
+
+   ```bash
+   [ "$(git hash-object "$PUB_DIR/$f")" = "$(git rev-parse "HEAD:$f")" ] \
+     && echo "MINE (published == your HEAD; delta is your working-tree edit)" \
+     || echo "UPSTREAM → STOP, the tree is stale"
+   ```
 
    **Either STOP condition means the tree is stale.** Do not edit, do not plan against the
    local code. Reconcile first: adopt the published version as the baseline, then re-apply

@@ -38,8 +38,19 @@ Run before PR. Each layer is gardening, not engineering:
    WORK="$(mktemp -d "${TMPDIR:-/tmp}/staleness-$EXT.XXXXXX")"
    trap 'rm -rf "$WORK"' EXIT
 
-   # Is it published at all? 404 → first submission, no baseline to be stale against.
-   if ! gh api "repos/raycast/extensions/contents/extensions/$EXT" >/dev/null 2>&1; then
+   # Is it published at all? Distinguish a REAL 404 from a failed request — a rate
+   # limit or network error must ABORT, never silently mean "not published."
+   HTTP="$(gh api "repos/raycast/extensions/contents/extensions/$EXT" \
+            --silent --include 2>/dev/null | head -1 | grep -oE '[0-9]{3}' | head -1)"
+   case "$HTTP" in
+     200) PUBLISHED=yes ;;
+     404) PUBLISHED=no  ;;
+     *)   echo "ABORT: baseline lookup returned '${HTTP:-no response}' (not 200/404)."
+          echo "Rate limit, auth, or network — cannot prove freshness. Do NOT publish."
+          exit 1 ;;
+   esac
+
+   if [ "$PUBLISHED" = no ]; then
      echo "NOT PUBLISHED — no baseline; skip this gate"
    else
      # Sparse, blobless checkout of just this extension — never the full monorepo.
@@ -75,19 +86,54 @@ Run before PR. Each layer is gardening, not engineering:
      diff -r -q \
        -x node_modules -x .git -x dist -x .DS_Store \
        -x raycast-env.d.ts -x '.prettierrc*' -x '.eslintrc*' \
-       "$PUB_DIR" . \
-       && echo "IN SYNC — no content differences" \
-       || echo "^^^ review every line above"
+       "$PUB_DIR" .
+     case $? in
+       0) echo "IN SYNC — no content differences" ;;
+       1) echo "DIFFERENCES — classify each line below before proceeding" ;;
+       *) echo "ABORT: diff failed (exit 2 = operational error, not a difference)."
+          echo "Cannot prove freshness. Do NOT publish."
+          exit 1 ;;
+     esac
    fi
    ```
 
-   **Read the output in three directions — they mean different things:**
+   > ⚠️ **`diff` exit 2 means the comparison FAILED; exit 1 means it found differences.**
+   > `diff … && echo "IN SYNC" || echo "review"` collapses both into the same message —
+   > verified 2026-07-29: a missing operand exits 2 and prints the review text, reading as
+   > an ordinary difference. Branch on the status explicitly; never use `&&/||` here.
 
-   | Output line | Meaning | Action |
+   **`Files … differ` is ambiguous on its own — and this is the step people skip.** It
+   fires identically whether *upstream* changed the file or *you* did. Shipping an update
+   necessarily changes files, so treating every `differ` as staleness blocks every normal
+   update, and waving them all through defeats the gate. **You must classify each one.**
+
+   Ask git, not your memory: does the published blob match the commit your local work
+   started from?
+
+   ```bash
+   # For each differing path, is the PUBLISHED version something you already had?
+   for f in $DIFFERING_PATHS; do
+     if git cat-file -e "HEAD:$f" 2>/dev/null && \
+        [ "$(git hash-object "$PUB_DIR/$f")" = "$(git rev-parse "HEAD:$f")" ]; then
+       echo "MINE   $f — published == your HEAD; the delta is your uncommitted edit"
+     elif git cat-file -e "HEAD:$f" 2>/dev/null && \
+          git merge-base --is-ancestor HEAD @{u} 2>/dev/null; then
+       echo "CHECK  $f — diverged from HEAD; inspect before publishing"
+     else
+       echo "UPSTREAM $f — published differs from anything in your history → STOP"
+     fi
+   done
+   ```
+
+   | Classification | Meaning | Action |
    | --- | --- | --- |
-   | `Only in <PUB_DIR>…` | upstream has a file you do not | **STOP** — publishing deletes it |
-   | `Files … differ` | upstream *edited* a file you also have | **STOP** — publishing reverts their fix |
-   | `Only in .` | your new local work | expected; this is what you're shipping |
+   | `Only in <PUB_DIR>` | upstream has a file you do not | **STOP** — publishing deletes it |
+   | `UPSTREAM` | published content is not in your history | **STOP** — publishing reverts their fix |
+   | `MINE` | published matches your `HEAD`; you edited locally | expected — this is your change |
+   | `Only in .` | your new local work | expected |
+
+   **When in doubt, diff the content and read it** (`diff "$PUB_DIR/<f>" <f>`). A file you
+   cannot confidently classify is an upstream change until proven otherwise — fail closed.
 
    > **`Files … differ` on `metadata/*.png` or `media/*.png` is usually real, not noise.**
    > Raycast CI **recompresses screenshots on merge**, so the published copy is smaller
@@ -143,15 +189,32 @@ Run before PR. Each layer is gardening, not engineering:
    net, not permission to submit stale. Check against the live registry, never memory:
 
    ```bash
-   LATEST="$(npm view @raycast/api version)"
-   LOCAL="$(jq -r '.dependencies["@raycast/api"]' package.json)"
-   INSTALLED="$(jq -r '.packages["node_modules/@raycast/api"].version' package-lock.json)"
-   echo "latest=$LATEST  manifest=$LOCAL  lockfile=$INSTALLED"
+   LATEST="$(npm view @raycast/api version 2>/dev/null)"
+   [ -n "$LATEST" ] || { echo "ABORT: could not reach npm — cannot prove the API is current."; exit 1; }
+
+   # Locate the lockfile: the extension dir normally, a parent under workspaces.
+   LOCK="$(node -e 'const f=require("path");let d=process.cwd();for(;;){const p=f.join(d,"package-lock.json");if(require("fs").existsSync(p)){console.log(p);break}const u=f.dirname(d);if(u===d)process.exit(1);d=u}' 2>/dev/null)"
+   [ -n "$LOCK" ] || { echo "ABORT: no package-lock.json found — the Store requires one."; exit 1; }
+
+   # v2/v3 lockfiles use .packages; a v1 lockfile uses .dependencies. Try both.
+   INSTALLED="$(jq -r '
+     (.packages["node_modules/@raycast/api"].version)
+     // (.dependencies["@raycast/api"].version)
+     // empty' "$LOCK")"
+   [ -n "$INSTALLED" ] || { echo "ABORT: @raycast/api not resolvable in $LOCK (workspace hoisting?)."; exit 1; }
+
+   echo "latest=$LATEST  lockfile=$INSTALLED  ($LOCK)"
+   [ "$INSTALLED" = "$LATEST" ] || {
+     echo "BLOCKED: @raycast/api $INSTALLED != latest $LATEST."
+     echo "Run: npm install @raycast/api@latest   then re-run tsc + build + lint."
+     exit 1
+   }
    ```
 
-   If `INSTALLED` trails `LATEST`, run `npm install @raycast/api@latest` — updating **both**
-   manifest and lockfile — then re-run the three gates above. A manifest range that
-   *permits* the latest is not sufficient; the lockfile is what ships.
+   **This is a hard compare that exits non-zero — not a printout to eyeball.** Every
+   failure path (npm unreachable, no lockfile, unresolvable version) aborts rather than
+   passing quietly: an unprovable claim about currency is not a pass. A manifest range
+   that merely *permits* the latest is insufficient; **the lockfile is what ships.**
 2. **House-style audit** (read-only — the `npm audit` twin) — assert against `reference/house-style.md` + `reference/keyboard-conventions.md`:
    - Every `Toast.Style.Failure` has a "Copy Error" action. **This is the blocking assertion** —
      hand-rolled or via the kit, either satisfies it.
@@ -344,7 +407,10 @@ mangled through inline flags. Keep it out of the extension directory — `.git/`
 published and never tracked:
 
 ```bash
-BODY=.git/pr-body.md   # NOT in the extension dir; ray publish must never ship it
+# Resolve via git — `.git/` is a DIRECTORY only at the repo root. In a monorepo
+# extension dir (Route A's normal case) `.git` is a parent, so a literal
+# `.git/pr-body.md` fails with "no such file or directory". Verified 2026-07-29.
+BODY="$(git rev-parse --git-path pr-body.md)"   # never tracked, never published
 cat > "$BODY" <<'EOF'
 ## Description
 
@@ -357,14 +423,20 @@ effect, not the implementation.>
 
 ## Checklist
 
-- [x] I read the [extension guidelines](https://developers.raycast.com/basics/prepare-an-extension-for-store)
-- [x] I read the [documentation about publishing](https://developers.raycast.com/basics/publish-an-extension)
-- [x] I ran `npm run build` and tested this distribution build in Raycast
-- [x] I ran `npm run lint` and `npx tsc --noEmit` — both clean
-- [x] I checked that this change does not break existing commands or remove functionality
-- [x] I updated `CHANGELOG.md` per the changelog conventions
+- [ ] I read the [extension guidelines](https://developers.raycast.com/basics/prepare-an-extension-for-store)
+- [ ] I read the [documentation about publishing](https://developers.raycast.com/basics/publish-an-extension)
+- [ ] I ran `npm run build` and tested this distribution build in Raycast
+- [ ] I ran `npm run lint` and `npx tsc --noEmit` — both clean
+- [ ] I checked that this change does not break existing commands or remove functionality
+- [ ] I updated `CHANGELOG.md` per the changelog conventions
 EOF
 ```
+
+> **The template ships every box UNTICKED on purpose. Tick each one only after naming the
+> run that earned it.** An agent that copies a pre-ticked block makes public claims in the
+> user's name that nobody verified — and "I tested this build in Raycast" is a claim only
+> the *user* can truthfully make, since it requires launching the app. Leave that one for
+> them and say so in your report.
 
 > **Tick a box only if that command actually ran green in THIS session, and paste the
 > output in your report.** Pre-ticking a checklist you did not verify is a false claim
@@ -372,11 +444,31 @@ EOF
 > gates ran green (step 0), the build/lint/tsc boxes are earned — say which run they came
 > from. Otherwise leave them unticked and flag it.
 
-**3. Post it onto the existing draft PR.**
+**3. Verify the PR is the right one — BEFORE mutating it.**
+
+`$PR` is a number you copied by hand into a repo of ~1,000 extensions and thousands of
+open PRs. A typo targets a **stranger's** PR, and the body you post is public. Confirm
+it's yours, it's for this extension, and it's still a draft — then act on the result:
 
 ```bash
-gh api -X PATCH "repos/raycast/extensions/pulls/$PR" -F body=@"$BODY" --jq '.draft'
+gh api "repos/raycast/extensions/pulls/$PR" \
+  --jq '{author:.user.login, head:.head.ref, draft:.draft, state:.state, files:.changed_files}'
 ```
+
+**All four must hold, or STOP:** `author` is yours, `head` names this extension,
+`draft` is `true`, `state` is `open`. If `draft` is `false`, the PR is already submitted —
+do not post; tell the user and let them decide.
+
+**4. Post it onto the draft.**
+
+```bash
+gh api -X PATCH "repos/raycast/extensions/pulls/$PR" -F body=@"$BODY" \
+  --jq '{draft:.draft, len:(.body|length)}'
+```
+
+> The PATCH sends **only** `body`, so it cannot flip draft state. The check above is the
+> real guard — reading `.draft` *after* the write cannot prevent one. `len` confirms the
+> body actually landed (a `0` means the file was empty or the flag was wrong).
 
 > ⚠️ **`-F` (uppercase) reads `@file`. `-f` (lowercase) does NOT** — it posts the literal
 > string `@.git/pr-body.md` as the PR body, publicly, on the user's submission. Verified

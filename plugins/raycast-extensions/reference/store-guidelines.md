@@ -42,14 +42,36 @@ slow-moving, and every one of them is stamped and re-checkable.
 
    ```bash
    # ── Always-check signals (cheap; run all of them) ────────────────────────────
+   # Scan the WHOLE extension, not just src/ — prohibited code hides in scripts/,
+   # tools/, and build helpers just as effectively.
+   SCAN=(--glob '!node_modules' --glob '!dist' --glob '!*.lock' --glob '!package-lock.json')
+
    jq -r '.license, .platforms, (.categories|tostring)' package.json  # MIT? scope? categories?
-   ls package-lock.json                                    # required; yarn.lock is NOT
-   rg -n 'Keychain|security find-generic-password' src     # PROHIBITED — blocks submission
-   rg -n 'analytics|mixpanel|amplitude|segment|posthog|GoogleAnalytics|gtag' src  # PROHIBITED
-   rg -n 'LocalStorage\.|Cache\(' src                      # must not store secrets
-   rg -ln 'i18n|intl-messageformat|react-intl' src         # custom localization NOT allowed
-   fd -e node -e wasm -e dylib -e so -e exe . --exclude node_modules  # opaque binaries
+   git ls-files --error-unmatch package-lock.json   # must exist AND be COMMITTED (npm only)
+
+   # PROHIBITED — Keychain. Case-insensitive; covers the CLI, the framework, and node bindings.
+   rg -in "${SCAN[@]}" 'keychain|security +(find|add|delete)-(generic|internet)-password|SecItem(Copy|Add|Update|Delete)|node-keytar|\bkeytar\b' .
+
+   # PROHIBITED — analytics/telemetry of ANY kind.
+   rg -in "${SCAN[@]}" 'analytics|telemetry|mixpanel|amplitude|posthog|sentry|datadog|bugsnag|segment\.(io|com)|google-analytics|gtag|\.track\(|\.capture\(' .
+
+   # NOT ALLOWED — custom localization (US English only).
+   rg -in "${SCAN[@]}" 'i18n|i18next|react-intl|intl-messageformat|@lingui|formatjs|\bgettext\b|translations?/' .
+
+   rg -n "${SCAN[@]}" 'LocalStorage\.|Cache\(' .          # must not store secrets
+
+   # Opaque binaries — match by TYPE, not extension: a committed Mach-O/ELF often has none.
+   fd --hidden --no-ignore -t f --exclude node_modules --exclude .git . \
+     -x sh -c 'file -b "$1" | grep -qiE "mach-o|elf |pe32|wasm" && echo "BINARY: $1"' _ {}
    ```
+
+   > ⚠️ **Every one of these is a *blocker*, so a false negative is the expensive
+   > direction.** Verified 2026-07-29: the previous `rg 'Keychain|security
+   > find-generic-password' src` reported **CLEAN** on a file containing
+   > `SecItemCopyMatching` and `security add-generic-password` — a hard Store blocker
+   > passing silently. Case-insensitivity, the framework symbols, and scanning outside
+   > `src/` are all load-bearing. **A clean result is only meaningful if you also state
+   > what you scanned.**
 
    | Trigger (signal in the tree) | Fetch this source | What it gates |
    | --- | --- | --- |
