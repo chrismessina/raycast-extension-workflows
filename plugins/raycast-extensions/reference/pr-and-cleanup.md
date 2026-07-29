@@ -21,8 +21,26 @@ boxes that are genuinely true:
 - update does not break existing commands / remove functionality
 - updated `CHANGELOG.md` per changelog conventions
 
-Write the body to a file and pass `--body-file` — multi-line bodies with backticks
-and checklists are mangled by inline `--body`.
+Write the body to a file — multi-line bodies with backticks and checklists are mangled
+by inline flags. Use `.git/pr-body.md`: never tracked, never published.
+
+**The flag differs by how the PR is created, and getting it wrong is publicly visible:**
+
+| Situation | Flag |
+| --- | --- |
+| `gh pr create` (Route B — PR made by hand) | `--body-file "$BODY"` |
+| `gh api -X PATCH …/pulls/<N>` (Route A — body onto `ray publish`'s draft) | **`-F` body=@"$BODY"** |
+
+⚠️ **For `gh api` it is `-F` (uppercase).** Lowercase `-f` does *not* expand `@path` — it
+posts the literal string `@.git/pr-body.md` as the body. Verified 2026-07-28 against the
+live API: `-F key=@path` preserves newlines and backticks exactly.
+
+**Ticking boxes is a claim made in the user's name.** Tick only what ran green in this
+session and paste the output; otherwise leave it unticked and flag it.
+
+**The PR stays a draft.** Post the body, then stop — clicking "Ready for review" submits
+it to Raycast's reviewers and is the user's decision, made after reading it. Never run
+`gh pr ready`. Full procedure: `ship` → *PR prep → Draft the PR body and post it*.
 
 ## Creating the PR — `gh` write calls hang in this sandbox
 

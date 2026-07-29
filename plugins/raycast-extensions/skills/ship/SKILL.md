@@ -314,6 +314,88 @@ falling back to WebFetch. Full procedure: `reference/store-guidelines.md`. Audit
 
 Title convention: `Update <Title> extension` by default; `[Title] <fix>` when one change dominates. No Conventional Commits. See `reference/pr-and-cleanup.md`.
 
+### Draft the PR body and post it — the PR stays a DRAFT
+
+`ray publish` opens the PR as a **draft with an empty description**. Write the first
+draft of that body from the real diff and post it, so the user reviews prose instead of
+composing it.
+
+> 🚧 **Post the body. Do NOT mark the PR ready for review.** Marking it ready submits it
+> to Raycast's reviewers — an outward-facing action that is the user's call, and one they
+> make *after* reading the body. Posting a body onto a draft is reversible (one more
+> PATCH); publishing a submission is not. **Never run `gh pr ready`.**
+
+**1. Ground the body in what actually changed — never in session memory.** The point of
+the draft is to save the user writing, which it only does if the content is right.
+
+```bash
+PR=<N>                                     # from ray publish's output
+EXT="$(jq -r .name package.json)"
+awk '/^##/{n++} n==1' CHANGELOG.md         # the top (unreleased) entry = the change list
+git log --oneline "$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~10)"..HEAD
+gh pr diff "$PR" --repo raycast/extensions --name-only   # what the PR really contains
+```
+
+If the CHANGELOG's top entry and the diff disagree, **the diff wins** — and say so in
+the report, because a CHANGELOG that misdescribes the change is itself a review finding.
+
+**2. Write the body to a file.** Multi-line content with backticks and checklists gets
+mangled through inline flags. Keep it out of the extension directory — `.git/` is never
+published and never tracked:
+
+```bash
+BODY=.git/pr-body.md   # NOT in the extension dir; ray publish must never ship it
+cat > "$BODY" <<'EOF'
+## Description
+
+<2–4 sentences: what changed and why, in the user's terms. Lead with the user-visible
+effect, not the implementation.>
+
+### Changes
+
+- <one bullet per CHANGELOG entry, rewritten for a reviewer who has never seen this code>
+
+## Checklist
+
+- [x] I read the [extension guidelines](https://developers.raycast.com/basics/prepare-an-extension-for-store)
+- [x] I read the [documentation about publishing](https://developers.raycast.com/basics/publish-an-extension)
+- [x] I ran `npm run build` and tested this distribution build in Raycast
+- [x] I ran `npm run lint` and `npx tsc --noEmit` — both clean
+- [x] I checked that this change does not break existing commands or remove functionality
+- [x] I updated `CHANGELOG.md` per the changelog conventions
+EOF
+```
+
+> **Tick a box only if that command actually ran green in THIS session, and paste the
+> output in your report.** Pre-ticking a checklist you did not verify is a false claim
+> made in the user's name, in public, to a reviewer who is trusting it. If the pre-flight
+> gates ran green (step 0), the build/lint/tsc boxes are earned — say which run they came
+> from. Otherwise leave them unticked and flag it.
+
+**3. Post it onto the existing draft PR.**
+
+```bash
+gh api -X PATCH "repos/raycast/extensions/pulls/$PR" -F body=@"$BODY" --jq '.draft'
+```
+
+> ⚠️ **`-F` (uppercase) reads `@file`. `-f` (lowercase) does NOT** — it posts the literal
+> string `@.git/pr-body.md` as the PR body, publicly, on the user's submission. Verified
+> 2026-07-28 against the live API: only `-F key=@path` expands the file (newlines and
+> backticks preserved intact). This is a one-character difference with a visibly wrong,
+> public result.
+
+**The `--jq '.draft'` must print `true`.** If it prints `false`, the PR was already out
+of draft — say so plainly rather than quietly leaving a submission live.
+
+**If the PATCH hangs (~2 min, auto-backgrounds):** that is the documented sandbox
+behavior for `gh` writes — see `reference/pr-and-cleanup.md`. **Do not retry it three
+times.** Check whether it landed anyway (`gh pr view "$PR" --repo raycast/extensions
+--json body --jq '.body | length'`), and if not, hand the user the exact command with the
+body file already written. Their one paste beats your three timeouts.
+
+**4. Report, then stop.** Give the user the PR URL, the body as posted, and the explicit
+next step: *read it, then click "Ready for review" yourself.* Do not do it for them.
+
 ## Submission — pick the topology FIRST
 
 **`author` is NOT the routing key.** It was, and that misroutes every net-new
@@ -368,9 +450,10 @@ git remote is NOT a blocker here; `ray publish` does not use it.
 2. Run `npm run publish`. It runs its own validate/lint/Prettier gates, then
    `getting fork → preparing clone → pushing extension → opening PR`.
 3. On success it prints the draft PR URL (`raycast/extensions/pull/<N>`). Relay it.
-   The PR opens as a **draft** — the user fills in the description and clicks
-   "Ready for review"; those are the user's steps, not yours. Offer to draft the PR
-   body (see PR prep).
+   The PR opens as a **draft with an empty description**.
+4. **Draft and post the PR body** — see *PR prep → Draft the PR body and post it*. Do
+   this by default; the user reviews prose rather than writing it. **The PR stays a
+   draft:** clicking "Ready for review" is the user's step, never yours.
 
 **Known failure — stale fork (expected, not a bug).** `ray publish` may stop with:
 
@@ -421,6 +504,12 @@ before trusting it as the baseline.
 
 **Outbound (submission) is manual:** push standalone `main` → sync the published file set
 into the `chrismessina/extensions` fork → open the PR.
+
+> **Route B creates the PR itself, so the body goes in at creation** — build it with
+> *PR prep → Draft the PR body and post it* (steps 1–2), then pass it to `gh pr create`
+> with **`--body-file "$BODY"` and `--draft`**. Same rule as Route A: **it opens as a
+> draft and you never mark it ready.** (`--body-file` here, `-F body=@file` for the
+> Route A PATCH — different flags, same file.)
 
 **Inbound (mirror sync) is a separate flow with its own automation — do not assume either
 way from this file.** `reference/my-extensions-mirror.md` is the **canonical topology
