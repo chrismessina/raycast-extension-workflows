@@ -85,6 +85,105 @@ offending skill) on a deliberately-injected dangling reference, then GREEN (exit
 
 ## Still open
 
+### P1 — upstream sync does not auto-fire on 35 of 36 mirrors (added 2026-07-29)
+
+**The mechanism.** `sync-from-upstream.yml` reconciles a standalone mirror against the merged
+monorepo state — it is what delivers the two things Raycast CI produces *only on merge*:
+**recompressed screenshots** and the **stamped `{PR_MERGE_DATE}`**. Where it doesn't fire, the
+mirror drifts silently, and the cost lands on the *next* ship session as staleness-gate
+reconciliation done by hand, long after anyone remembers why.
+
+**Receipt:** `get-app-icon` was `repository_dispatch` + `workflow_dispatch` with no `schedule`.
+`gh run list` showed **one run in five months** (manual, 2026-02-27). It never fired for the
+2026-07-27 merge, and the 2026-07-29 ship session paid for it — adopting 3 CI-compressed PNGs by
+hand (1.9 MB) and resolving a CHANGELOG conflict that would otherwise have re-dated shipped
+history. Fixed there in `5a82561` (daily cron at `17 9 * * *`).
+
+**The fix, per repo, is a 4-line insertion** into the existing `on:` block — keep
+`repository_dispatch` as the fast path:
+
+```yaml
+on:
+  schedule:
+    - cron: "17 9 * * *"   # off the hour; daily is plenty — Store review takes days
+  repository_dispatch:
+    types: [upstream-sync]
+  workflow_dispatch:
+```
+
+> **Stagger the minute per repo** rather than pasting `17 9` 35 times. GitHub queues
+> same-minute cron across all of Actions, and scheduled runs are already best-effort/delayed
+> under load; 35 mirrors firing simultaneously is self-inflicted contention. Spread them across
+> the hour (e.g. `$((RANDOM % 60)) 9 * * *`, recorded per repo).
+
+#### Group A — has the workflow, needs only the `schedule:` block (12)
+
+11 of these are **byte-identical** (`sha256 b32b8b12…`), so one edit is mechanically repeatable.
+`raycast-reader` differs *only* by `UPSTREAM_EXT_DIR: "reader-mode"` (slug override) — same
+structure, same edit.
+
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-at-profile` (`at-profile`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-bookface` (`bookface`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-digger` (`digger`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-fathom` (`fathom`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-karakeep` (`karakeep`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-luma` (`luma`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-reader` (`reader-mode` — slug override)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-secret-browser-commands` (`secret-browser-commands`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-store-updates` (`raycast-store-updates`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-tesla-energy` (`tesla-energy`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-trimmy` (`trimmy`)
+- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap` (`wrap-unwrap`)
+
+#### Group B — no workflow at all; needs the file, but ONLY if published upstream (23)
+
+Copy the template from `raycast-get-app-icon/.github/workflows/sync-from-upstream.yml` (it now
+carries the cron), setting `UPSTREAM_EXT_DIR` when the monorepo dir ≠ `package.json` `name`.
+
+**Gate each one on "is this slug actually in `raycast/extensions`?" first.** An unpublished
+extension has no upstream to sync from, so the workflow would fail on every run — noise, not
+coverage. That check could not be completed on 2026-07-29: `gh api` began returning
+`authorization timeout` mid-survey (the 1Password/keychain prompt), and an earlier version of the
+survey script **silently reported all 36 as unpublished** because it collapsed that error into
+"no". Re-derive the published set before touching Group B, and fail loud on a non-200/404:
+
+```bash
+# One call for the whole monorepo beats 36 per-slug calls. Verify it parsed as an ARRAY
+# before trusting it — an auth error that reads as "not published" is the trap here.
+JSON=$(gh api "repos/raycast/extensions/contents/extensions" 2>&1)
+printf '%s' "$JSON" | jq -e 'type=="array"' >/dev/null \
+  || { echo "ABORT: $(printf '%s' "$JSON" | head -c 120)"; exit 1; }
+printf '%s' "$JSON" | jq -r '.[] | select(.type=="dir") | .name' | sort > /tmp/upstream_slugs.txt
+grep -qx get-app-icon /tmp/upstream_slugs.txt || { echo "ABORT: list looks wrong"; exit 1; }
+```
+
+`airbuddy`, `brew`, `central-icon-system`, `change-case`, `claude-artifacts`, `craft`,
+`craftdocs`, `domainr`, `fetch`, `raycast-fly`, `google-books`, `google-maps`, `happenstance`,
+`ios-apps`, `memory-store`, `openskills`, `parallel-web-tools`, `quick-call`, `screenocr`,
+`sora`, `threads-client`, `wayback-machine`, `word-count`
+
+- [ ] Re-derive the published set (above), then add the workflow to each **published** repo
+- [ ] Record which of the 23 are unpublished, so the next sweep doesn't re-check them
+
+#### Verification (per repo — a workflow that never runs looks identical to one that works)
+
+```bash
+sed -n '/^on:/,/^jobs:/p' .github/workflows/sync-from-upstream.yml   # schedule present?
+gh run list --workflow sync-from-upstream.yml --limit 5              # did it ACTUALLY run?
+```
+
+**A cron on a branch other than the default branch never fires** — commit to `main`. And GitHub
+disables scheduled workflows in repos with no activity for 60 days, which several of these will
+hit; the run-history check is the only way to notice.
+
+- [ ] Sweep once after the first cron day to confirm real runs (not just committed YAML)
+
+**Reassurance for the media/metadata worry:** the sync downloads the extension dir recursively, so
+it *does* overwrite `media/` and `metadata/`. That is safe for freshly-updated screenshots
+**provided they are in the merged PR** — post-merge upstream then holds the user's own images,
+CI-recompressed, so a 1.6 MB local copy is replaced by a pixel-identical smaller one. A local
+screenshot *not* in a merged PR **would** be reverted: publish first, then sync.
+
 ### P2 — `ship`, remaining
 
 - [ ] **Exercise `ship` end-to-end on a real submission.** Everything above is authored and
