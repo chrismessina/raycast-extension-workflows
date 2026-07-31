@@ -380,6 +380,55 @@ Run before PR. Each layer is gardening, not engineering:
      defect this rule exists to prevent, and it is invisible on casual reading because
      the two headings look alike.
 
+     **The entries must describe what a USER notices, not how the code works.** A
+     changelog line explaining an internal mechanism is stale the moment that mechanism
+     is refactored, and nobody notices because the changelog isn't compiled. Rewrite each
+     entry to the observable effect and check it against the diff, not against memory of
+     what you built. *(2026-07-30, `get-app-icon`: three entries described timestamp
+     stamping and per-visit re-extraction — internals that a rewrite later in the same PR
+     deleted entirely. They would have shipped as a description of code that no longer
+     existed.)*
+
+   - **Comments in the diff must earn their keep.** Read every comment the branch adds or
+     touches and delete the ones that don't survive these questions:
+
+     | Ask | Delete if |
+     | --- | --- |
+     | Does it describe code that still exists? | it argues against an approach the branch replaced — "the previous design…", "this used to…" |
+     | Could a reader verify it from the file? | it cites a mechanism, file, or symbol that is gone |
+     | Is it true anywhere but this machine? | it hardcodes a local census — "150 of 327 apps here" |
+     | Does it say something the code doesn't? | it restates the next line in prose |
+
+     **Long is not the same as unnecessary.** A comment explaining why each element of a
+     list is required — where dropping one silently breaks something — earns its length.
+     A comment relitigating a design decision for reviewers does not: that belongs in the
+     commit message, which is where history is supposed to live.
+
+     Iterative review cycles are what generate this. Each round leaves behind an
+     explanation aimed at the last reviewer, and after several the file argues with
+     ghosts. Sweep before shipping:
+
+     ```bash
+     # comment-to-code ratio; investigate anything approaching parity
+     total=$(wc -l < src/<file>); cmt=$(rg -c '^\s*(\*|//|/\*)' src/<file>)
+     echo "total $total | comment $cmt | code $((total-cmt))"
+     # the usual archaeology
+     rg -n "previously|used to|the old |v1|earlier (design|version)|no longer" src/
+     ```
+
+     Verify the sweep touched nothing else — a comment-only change should produce a diff
+     with no code lines:
+
+     ```bash
+     git diff -U0 | rg "^[+-]" | rg -v "^(\+\+\+|---)" | rg -v "^[+-]\s*(//|\*|/\*)" | rg -v "^[+-]\s*$"
+     ```
+
+     *(2026-07-30, `get-app-icon`: after four review rounds the icon cache carried more
+     comment than code — 227 lines against 214 — most of it defending a rewrite against
+     the design it replaced. Two comments had also gone stale unnoticed: one documented a
+     TAB-delimited wire format that had become space-delimited base64, the other explained
+     a result-pairing contract the rewrite had deleted.)*
+
 ## HARD GATE — no PR without a green pre-flight
 
 **The pre-flight above is a gate, not a suggestion. Do not open OR update a Store PR —
@@ -405,7 +454,11 @@ returned — paste the actual output, don't assert it:
 - [ ] **house-style audit** (step 2) → zero violations, having **read `package.json`
       `platforms` first** (absent ⇒ macOS-only; see `reference/house-style.md`)
 - [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`, and no already-dated
-      entry was touched (diff against the published CHANGELOG)
+      entry was touched (diff against the published CHANGELOG). Entries describe what a user
+      notices, not internals a later refactor can silently invalidate.
+- [ ] **comments in the diff earn their keep** (step 3) → no comment argues against a design this
+      branch replaced, cites a symbol that no longer exists, or hardcodes a local census. Say what
+      you deleted; "none needed removing" is a valid answer only if you actually read them.
 - [ ] **README asset folders** → BOTH greps empty. `assets/` is not an acceptable home for README
       images — it ships to every user:
       ```bash
