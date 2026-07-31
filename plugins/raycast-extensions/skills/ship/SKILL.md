@@ -148,30 +148,60 @@ Run before PR. Each layer is gardening, not engineering:
    smaller. Size is *not* the discriminator — a new screenshot of a similar-looking
    screen is also ~1.6 MB against a ~1.0 MB published copy.
 
-   **The discriminator is the pixels, compared against `HEAD` — not against each other.**
-   Normalize through `sips` to strip the PNG container/compression layer, then ask which
-   side matches the committed baseline:
+   **The discriminator is the pixels — but `HEAD` is NOT a safe baseline.** `HEAD` only
+   means "unchanged" while the new assets are still *uncommitted*. The moment they are
+   committed — which is the normal state when `ship` runs, and the whole point of
+   committing before submitting — `local == HEAD` is trivially true for a brand-new image,
+   and it misreports as `RECOMPRESS`. Acting on that **reverts the user's new artwork**.
+
+   **Compare the three copies directly and fail closed.** The only safe automatic action
+   is adopting upstream when the pixels are *provably identical*; anything else keeps
+   local and is reported for a human decision.
 
    ```bash
-   for f in $(git ls-files 'metadata/*.png' 'media/*.png'); do
-     git show "HEAD:$f" > /tmp/h.png 2>/dev/null || continue
-     n() { sips -s format png --out "/tmp/n.png" "$1" >/dev/null 2>&1 && shasum -a256 < /tmp/n.png | cut -c1-16; }
-     ph=$(n "$PUB_DIR/$f"); hh=$(n /tmp/h.png); lh=$(n "$f")
-     if   [ "$lh" != "$hh" ]; then echo "NEW SHOT   $f — user replaced it; KEEP LOCAL"
-     elif [ "$ph" != "$hh" ]; then echo "RECOMPRESS $f — same pixels, CI-optimized; ADOPT UPSTREAM"
-     else                          echo "IDENTICAL  $f"
+   norm() { sips -s format png --out "$2" "$1" >/dev/null 2>&1 && shasum -a256 < "$2" | cut -c1-16; }
+   for f in $(git ls-files 'metadata/*.png' 'media/*.png' 'assets/*.png'); do
+     [ -f "$PUB_DIR/$f" ] || { echo "LOCAL-ONLY $f — new file; KEEP LOCAL"; continue; }
+     ph=$(norm "$PUB_DIR/$f" /tmp/p.png); lh=$(norm "$f" /tmp/l.png)
+     # A failed normalization must never look like a match.
+     [ -n "$ph" ] && [ -n "$lh" ] || { echo "UNREADABLE $f — KEEP LOCAL (cannot compare)"; continue; }
+     if [ "$ph" = "$lh" ]; then
+       # Identical pixels. Adopt upstream ONLY if that actually saves bytes.
+       if [ "$(stat -f%z "$PUB_DIR/$f")" -lt "$(stat -f%z "$f")" ]; then
+         echo "RECOMPRESS $f — same pixels, upstream smaller; safe to adopt"
+       else
+         echo "IDENTICAL  $f"
+       fi
+     else
+       echo "DIFFERENT  $f — pixels differ; KEEP LOCAL (assume the user replaced it)"
      fi
    done
    ```
 
    | Verdict | Meaning | Action |
    | --- | --- | --- |
-   | `NEW SHOT` | local pixels ≠ `HEAD` — the user changed the image | **keep local**; adopting would discard their work |
-   | `RECOMPRESS` | local pixels == `HEAD`, published differs | **adopt upstream** (`cp "$PUB_DIR/$f" "$f"`) — saves re-inflating |
-   | `IDENTICAL` | all three agree | nothing to do |
+   | `DIFFERENT` | published and local pixels differ | **keep local** — never auto-adopt; adopting reverts new artwork |
+   | `RECOMPRESS` | pixels byte-identical after normalization, upstream smaller | safe to adopt (`cp "$PUB_DIR/$f" "$f"`) — saves churn |
+   | `LOCAL-ONLY` / `UNREADABLE` | no baseline, or normalization failed | **keep local** |
+   | `IDENTICAL` | same pixels, no size win | nothing to do |
+
+   **`DIFFERENT` is not a prompt to adopt.** It means the image changed and only a human
+   knows whether that was intentional. In practice it almost always was — the user
+   replaced a screenshot. If you genuinely suspect upstream holds a fix you lack, *look at
+   both images* before touching either.
 
    Then assert the kept files still meet spec (`2000 × 1250`) — a replaced screenshot is
    the most likely thing in the tree to be the wrong size.
+
+   *(2026-07-30, `karakeep` 2.4.0: the previous `HEAD`-based script reported
+   `RECOMPRESS → ADOPT UPSTREAM` for **all six screenshots AND the extension icon** — every
+   one of which the user had just replaced that session. Because the assets were already
+   committed (as they should be before shipping), `local == HEAD` held trivially and the
+   "did the user change it?" test could never fire. Following the verdict would have
+   reverted the entire visual refresh. Caught only because the agent knew the images were
+   new and checked the pixels by hand: `published 4.0K / local 48K, normalized sha differs`.
+   Hence the rewrite above — compare published against local, never against `HEAD`, and
+   auto-adopt **only** on a proven pixel match.)*
 
    *(2026-07-29, `get-app-icon`: five images differed. Three were pure recompression —
    adopting them saved 1.9 MB of pointless churn, and they correctly showed **no diff** in
