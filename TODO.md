@@ -85,6 +85,40 @@ offending skill) on a deliberately-injected dangling reference, then GREEN (exit
 
 ## Still open
 
+### P1 — upstream sync — **LARGELY CLOSED 2026-07-31** (see below; original entry kept for context)
+
+> **Update 2026-07-31 (karakeep 2.4.0 ship).** The missing `schedule:` was only *one* of four
+> defects, and the least dangerous. The template itself was broken in three further ways, each
+> verified against real CI runs on `raycast-karakeep`:
+>
+> 1. **`git add -A`** swept any local-only file into an unreviewed automated commit.
+> 2. **A per-file contents-API walk** (~85 requests) tripped secondary rate limits against
+>    `raycast/extensions` — a repo the default `GITHUB_TOKEN` doesn't own. Run `30660911758`
+>    failed partway through it.
+> 3. **The deletion pass could delete the entire repository.** A later revision (karakeep-only)
+>    wrote manifest paths as `"${local_path#./}/$name"`; for a root-level file `local_path` is
+>    bare `.` and the stripped prefix is `./`, yielding `./package.json` while the guard grepped
+>    for `package.json`. Every root file therefore read as "no longer served upstream". Run
+>    `30651601868` deleted `package.json`, `package-lock.json`, `tsconfig.json`, `README.md`,
+>    `AGENTS.md`, `.gitignore` and the workflow itself — **4,060 lines, while reporting success.**
+>
+> The template is now the version proven green in run `30676094499` (77/77 files, zero deletions):
+> one scoped tree call (4 API requests), fail-closed `truncated=false` and downloaded-count
+> assertions, staging limited to the manifest, and deletion candidates limited to *directories*
+> the sync populates, skipped entirely below 10 manifest entries.
+>
+> **A whole-repo `git/trees?recursive=1` DOES truncate on this monorepo** — dropped entries would
+> read as upstream deletions, which is why the call is scoped to the extension's own subtree.
+>
+> **Deployed:** all 12 mirrors that had the workflow, plus 10 of the 11 published mirrors that
+> lacked it. `raycast-luma` (no remote), `raycast-change-case` / `raycast-craftdocs` (no remote —
+> committed locally), `raycast-quick-call` (detached HEAD — skipped).
+>
+> **Published set re-derived** (the 2026-07-29 blocker). Note the contents API **caps at 1000
+> entries** and silently truncates: it stopped at `g` and reported `karakeep` as unpublished. Use
+> the tree API and assert `truncated == false` — 3,139 extensions, sentinels verified.
+> **11 of 23 Group B repos are published**; the other 12 have no upstream and are correctly skipped.
+
 ### P1 — upstream sync does not auto-fire on 35 of 36 mirrors (added 2026-07-29)
 
 **The mechanism.** `sync-from-upstream.yml` reconciles a standalone mirror against the merged
@@ -116,24 +150,24 @@ on:
 > under load; 35 mirrors firing simultaneously is self-inflicted contention. Spread them across
 > the hour (e.g. `$((RANDOM % 60)) 9 * * *`, recorded per repo).
 
-#### Group A — has the workflow, needs only the `schedule:` block (12)
+#### Group A — had the workflow — **DONE 2026-07-31** (12; all needed the WHOLE file replaced, not just `schedule:`)
 
 11 of these are **byte-identical** (`sha256 b32b8b12…`), so one edit is mechanically repeatable.
 `raycast-reader` differs *only* by `UPSTREAM_EXT_DIR: "reader-mode"` (slug override) — same
 structure, same edit.
 
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-at-profile` (`at-profile`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-bookface` (`bookface`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-digger` (`digger`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-fathom` (`fathom`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-karakeep` (`karakeep`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-luma` (`luma`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-reader` (`reader-mode` — slug override)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-secret-browser-commands` (`secret-browser-commands`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-store-updates` (`raycast-store-updates`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-tesla-energy` (`tesla-energy`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-trimmy` (`trimmy`)
-- [ ] `/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap` (`wrap-unwrap`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-at-profile` (`at-profile`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-bookface` (`bookface`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-digger` (`digger`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-fathom` (`fathom`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-karakeep` (`karakeep`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-luma` (`luma`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-reader` (`reader-mode` — slug override)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-secret-browser-commands` (`secret-browser-commands`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-store-updates` (`raycast-store-updates`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-tesla-energy` (`tesla-energy`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-trimmy` (`trimmy`)
+- [x] `/Users/messina/Developer/GitHub/chrismessina/raycast-wrap-unwrap` (`wrap-unwrap`)
 
 #### Group B — no workflow at all; needs the file, but ONLY if published upstream (23)
 
@@ -162,8 +196,25 @@ grep -qx get-app-icon /tmp/upstream_slugs.txt || { echo "ABORT: list looks wrong
 `ios-apps`, `memory-store`, `openskills`, `parallel-web-tools`, `quick-call`, `screenocr`,
 `sora`, `threads-client`, `wayback-machine`, `word-count`
 
-- [ ] Re-derive the published set (above), then add the workflow to each **published** repo
-- [ ] Record which of the 23 are unpublished, so the next sweep doesn't re-check them
+- [x] Re-derive the published set (2026-07-31 — see the update block at the top of this section)
+- [x] Add the workflow to each **published** repo (10 of 11 done; `quick-call` skipped, detached HEAD)
+- [x] Record which of the 23 are unpublished, so the next sweep doesn't re-check them:
+
+  **Published (workflow added):** `brew`, `change-case`ᴸ, `claude-artifacts`, `craftdocs`ᴸ,
+  `domainr`, `raycast-fly`, `google-books`, `screenocr`, `wayback-machine`, `word-count`,
+  and `quick-call` (**still needs it** — detached HEAD at the time).
+  ᴸ = committed locally only; the repo has no `origin` remote.
+
+  **Not published as of 2026-07-31 — no upstream to sync, skip:** `airbuddy`,
+  `central-icon-system`, `craft`, `fetch`, `google-maps`, `happenstance`, `ios-apps`,
+  `memory-store`, `openskills`, `parallel-web-tools`, `sora`, `threads-client`.
+
+  Not extensions at all (no `commands` key), excluded from the sweep: `raycast-kit`,
+  `raycast-logger`, `raycast-extension-workflows`, `raycast-memory-store-workspace`.
+
+- [ ] `raycast-quick-call` is on a detached HEAD — check out `main` before adding the workflow
+- [ ] `raycast-luma`, `raycast-change-case`, `raycast-craftdocs` have no `origin` remote; the
+      commits exist locally but no cron can fire until each has a GitHub remote
 
 #### Verification (per repo — a workflow that never runs looks identical to one that works)
 
