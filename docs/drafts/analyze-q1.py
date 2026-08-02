@@ -17,10 +17,14 @@ Or run against the committed slim CSV, which carries the same columns:
 
 import csv
 import json
+import signal
 import statistics as st
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime
+
+# Die quietly when piped into `head` instead of dumping a BrokenPipeError traceback.
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 
 def load(path):
