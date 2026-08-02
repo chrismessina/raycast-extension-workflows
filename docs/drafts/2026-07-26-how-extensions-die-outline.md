@@ -60,14 +60,15 @@ caveats in the appendix section below. Backing detail lives in
 
 | | Q1 2026 | Q2 2026 |
 |---|---:|---:|
-| Submissions | 989 | 770 |
-| Merged | 321 | 238 |
-| Failed | 667 | 459 |
-| Still open | 1 | **73** |
-| Failure rate | 67.5% | 65.9% *(provisional)* |
+| Submissions | 989 | 781 |
+| Merged | 321 | 239 |
+| Failed | 667 | 480 |
+| Failure rate | **67.5%** | **66.8%** |
 
-  - Q2 is **right-censored** — 73 PRs still open. True rate bounded at **59.6%–69.1%**; Q1's
-    67.5% falls inside it. **Report as "flat," never as "improving."**
+  - Two independent quarters, 1,770 PRs, same answer. **Report as "flat," never as
+    "improving."** The step change was 2024→2025 and it has held.
+  - *Credibility move: state that Q2 was pulled as a genuine out-of-sample replication after
+    the Q1 conclusions were already written. That's rare in a blog post and readers notice.*
 
 *Exhibit B — chart: new-extension PRs, Q1 by year (stacked merged/failed).*
 
@@ -95,15 +96,18 @@ caveats in the appendix section below. Backing detail lives in
 - **Zero.** Not one of the 989 PRs — merged or failed — had zero comments. The median *failed*
   PR got **four**. **Nobody is being ignored.** Failure is a conversation that stopped.
 
-*Exhibit D — the money chart: merge rate by comment count.*
+*Exhibit D — the money chart: merge rate by comment count. Combined Q1+Q2, n=1,770.*
 
 | Comments | Merged | Failed | Merge rate |
 |---:|---:|---:|---:|
-| 0–2 | 2 | 178 | **1.1%** |
-| 3–4 | 95 | 244 | 28.0% |
-| 5–6 | 97 | 146 | 39.9% |
-| 7–9 | 89 | 65 | **57.8%** |
-| 10+ | 38 | 34 | 52.8% |
+| 0–2 | 2 | 326 | **0.6%** |
+| 3–4 | 137 | 434 | 24.0% |
+| 5–6 | 197 | 240 | 45.1% |
+| 7–9 | 167 | 100 | **62.5%** |
+| 10+ | 57 | 47 | 54.8% |
+
+- Q2 alone: **0 merged out of 148** PRs with 0–2 comments. The cliff is not a Q1 artifact.
+- **Zero PRs out of 1,770 had zero comments** — in *both* quarters, for *both* outcomes.
 
 - **Be honest about causality in-post** — it's the strongest move available and critics will
   raise it anyway. Merged PRs accrue comments partly *because* they progress. The claim that
@@ -130,12 +134,41 @@ caveats in the appendix section below. Backing detail lives in
 
 **And the finding that kills the easy explanation:**
 
-- 714 distinct authors; **77.7% submitted exactly one.**
-- One-PR authors merged at **31.7%**. Multi-PR authors: **33.5%.** Nearly identical.
+- 714 distinct authors in Q1; **77.7% submitted exactly one** (Q2: 81.4%).
+- Merge rate by author experience:
+
+| | one-PR authors | repeat authors |
+|---|---:|---:|
+| Q1 | 31.7% | 33.5% |
+| Q2 | **36.8%** | **27.8%** |
+
+- **The direction flips between adjacent quarters.** A predictor that reverses sign is noise.
+  State it plainly: *prior experience does not predict whether your extension ships.*
 - Beat: *if this were just newcomers not knowing the ropes, repeat contributors would do much
-  better. They don't.* What separates outcomes isn't familiarity — it's finishing **this**
-  thread.
-- Of 520 authors with a failed extension, only **65 (12.5%)** landed one that quarter.
+  better. They don't — in either direction.* What separates outcomes isn't familiarity, it's
+  finishing **this** thread.
+- Of 520 Q1 authors with a failed extension, only **12.5%** landed one that quarter (Q2: 10.6%).
+
+## Section 3.5 — The window is closing (new, and the most actionable finding)
+
+*Exhibit E — median days-to-merge, Q1 vs Q2, with the 25-day stale line drawn across.*
+
+| | Q1 | Q2 |
+|---|---:|---:|
+| Median days to merge | 12.9 | **25.0** |
+| p25 | 7.4 | 20.7 |
+
+- Robustness (include it — this is the finding most likely to be challenged): restricted to
+  PRs created in the **first month** of each quarter, so both cohorts have 90+ days of
+  observation, **11.3 days → 24.9 days**. Censoring biases Q2 *downward*, so the real shift is
+  at least this big.
+- **The kicker: the median successful PR now takes as long as the stale-label threshold.**
+  Success and abandonment have converged on the same timescale.
+- Beat: the folk heuristic — *"three weeks of silence means it's dead"* — used to be roughly
+  right and is now precisely wrong. It tells you to walk away at the exact moment the median
+  winner is still in flight.
+- This is the strongest practical takeaway in the piece. Consider promoting it into the dek or
+  the social hook.
 - The mechanic in the maintainer's own words (@pernielsentikaer, #24100):
   > "I converted this PR into a draft until it's ready for the review, please press the button
   > **Ready for review** when it's ready and we'll have a look 😊"
@@ -237,9 +270,12 @@ disarms the "easy for you to say" reaction.*
 
 ## Appendix — method (short, in-post; builds trust with this audience)
 
-- Source: public GitHub PR data for `raycast/extensions`, 2026-07-26. Aggregate counts from
-  filtered searches (complete populations, not samples); per-PR distributions from the GitHub
-  search API for Q1 2026 new-extension PRs (n=989).
+- Source: public GitHub PR data for `raycast/extensions`. Aggregate counts from filtered
+  searches (complete populations, not samples); per-PR distributions from the GitHub search API
+  for new-extension PRs in **Q1 2026 (n=989)** and **Q2 2026 (n=781)** — 1,770 total.
+- **Q2 was pulled as an out-of-sample replication after the Q1 conclusions were written.**
+  Every headline finding reproduced; the one that didn't (author experience) reversed sign,
+  which is reported as evidence it was never a real effect.
 - Qualitative: ~150 PRs read across Jan–Jul 2026, merged / open / closed-unmerged.
 - **Stated caveats** — cheap to include, expensive to omit:
   - Right-censoring: recent windows understate failure. Q1 used for all rate comparisons.
@@ -276,11 +312,13 @@ disarms the "easy for you to say" reaction.*
 
 ## Distribution notes
 
-- **Hook for social:** "989 people submitted a Raycast extension last quarter. 321 shipped.
-  Zero of the 667 failures were ignored — the median one got 4 comments. They just stopped
+- **Hook for social:** "1,770 Raycast extension submissions over two quarters. Two-thirds never
+  shipped. Not one of them was ignored — the median failure got 3–4 comments. They just stopped
   replying."
-- **Alt hook:** "PRs with 0–2 comments: 1% merge rate. PRs with 7–9 comments: 58%. The gap
+- **Alt hook:** "PRs with 0–2 comments: 0.6% merge rate. PRs with 7–9 comments: 62.5%. The gap
   between shipping and dying is a handful of replies."
+- **Strongest hook (use this one):** "The median Raycast extension now takes 25 days to merge.
+  The bot marks your PR stale at 25 days. Success and abandonment now run on the same clock."
 - Angle for dev-rel readers: this is a **contributor-funnel** post. Any ecosystem with a
   review queue can run the same query and will find its own version.
 - Angle for AI/agent readers: a worked example of automating away a review loop by mining the

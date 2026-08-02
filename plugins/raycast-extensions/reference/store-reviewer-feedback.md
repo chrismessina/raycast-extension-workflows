@@ -90,22 +90,59 @@ stopped.
 the 520 authors with at least one failure, only **65 (12.5%)** landed any new extension in the
 same quarter.
 
-### Q2 2026 — the rate is flat, not worsening
+### Q2 2026 — replicated (n=781, API export)
+
+Every headline finding reproduces on an independent quarter:
 
 | | Q1 2026 | Q2 2026 |
 |---|---:|---:|
-| Submissions | 989 | 770 |
-| Merged | 321 | 238 |
-| Closed unmerged | 667 | 459 |
-| Still open | 1 | **73** |
-| Failure rate (of resolved) | **67.5%** | 65.9% *(provisional)* |
-| Failed & in draft | 515 (77.2%) | 324 (**70.6%**) |
+| Submissions | 989 | 781 |
+| Merged | 321 | 239 |
+| Closed unmerged | 667 | 480 |
+| Still open | 1 | 62 |
+| **Failure rate** (of resolved) | **67.5%** | **66.8%** |
+| Failed & in draft | 515 (77.2%) | 335 (69.8%) |
+| Zero-comment PRs | 0 | 0 |
+| Median comments (merged / failed) | 6 / 4 | 6 / 3 |
+| Merge rate at 0–2 comments | 1.1% | **0.0%** (0 of 148) |
+| Failures dying < 1 day | 26.5% | 28.5% |
+| Failures in the 25–60 day stale zone | 35.5% | 36.7% |
+| Authors submitting exactly one | 77.7% | 81.4% |
 
-**Do not read Q2 as an improvement.** Q2 still has 73 open PRs against Q1's 1, so its rate is
-right-censored. The true value is bounded: if every open PR eventually fails, 69.1%; if every
-one merges, 59.6%. Q1's 67.5% sits inside that interval. **The honest conclusion is that the
-failure rate held flat quarter over quarter** — which matters, because "AI slop is making this
-worse *right now*" is the claim the data does not support. The step change was 2024→2025.
+**Combined across both quarters (n=1,770):**
+
+- **Zero PRs — none, out of 1,770 — had zero comments.** Nobody is ignored, in either quarter.
+- The low-engagement cliff: **2 merged vs 326 failed at 0–2 comments — a 0.6% merge rate.**
+
+| Comments | Merged | Failed | Merge rate |
+|---:|---:|---:|---:|
+| 0–2 | 2 | 326 | **0.6%** |
+| 3–4 | 137 | 434 | 24.0% |
+| 5–6 | 197 | 240 | 45.1% |
+| 7–9 | 167 | 100 | **62.5%** |
+| 10+ | 57 | 47 | 54.8% |
+
+**The one thing that did NOT replicate — and it strengthens the conclusion.** Author experience
+flipped direction: Q1 favored repeat authors (33.5% vs 31.7%), Q2 favored first-timers (36.8%
+vs 27.8%). A predictor that reverses sign between adjacent quarters is noise. **Prior
+experience does not predict whether your extension ships.**
+
+### NEW in Q2: time-to-merge doubled, and converged with the stale deadline
+
+| | Q1 | Q2 |
+|---|---:|---:|
+| Median days to merge | 12.9 | **25.0** |
+| p25 | 7.4 | 20.7 |
+
+Restricting both to PRs created in the **first month** of each quarter — so both cohorts have
+90+ days of observation and truncation cannot explain the gap — the shift holds: **median 11.3
+days (Jan) → 24.9 days (Apr)**. Right-censoring biases the Q2 figure *downward*, so the real
+effect is at least this large.
+
+> **The median successful PR now takes as long as the stale-label threshold (25 days).**
+> Success and abandonment have converged on the same timescale. A contributor who assumes "no
+> news for three weeks means it's dead" is now wrong exactly when it counts — and the stale
+> clock fires the moment they stop watching.
 
 > ### ⚠️ Measurement trap: two different "comment" counts
 >
