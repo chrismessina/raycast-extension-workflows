@@ -127,6 +127,55 @@ flipped direction: Q1 favored repeat authors (33.5% vs 31.7%), Q2 favored first-
 vs 27.8%). A predictor that reverses sign between adjacent quarters is noise. **Prior
 experience does not predict whether your extension ships.**
 
+### Did Greptile change anything? A ten-quarter series says no.
+
+New-extension PRs, every quarter since 2024:
+
+| Quarter | Merged | Failed | Submissions | Failure rate | |
+|---|---:|---:|---:|---:|---|
+| 2024 Q1 | 154 | 143 | 297 | 48.1% | |
+| 2024 Q2 | 152 | 129 | 281 | 45.9% | |
+| 2024 Q3 | 129 | 134 | 263 | 51.0% | |
+| 2024 Q4 | 133 | 144 | 277 | 52.0% | |
+| 2025 Q1 | 179 | 330 | 509 | **64.8%** | ← Greptile reviewing (first seen Q1 2025) |
+| 2025 Q2 | 155 | 316 | 471 | 67.1% | |
+| 2025 Q3 | 163 | 337 | 500 | 67.4% | |
+| 2025 Q4 | 199 | 422 | 621 | 68.0% | ← *Prompt To Fix With AI* ships ~Sep 30 2025 |
+| 2026 Q1 | 321 | 667 | 988 | 67.5% | |
+| 2026 Q2 | 239 | 480 | 719 | 66.8% | |
+
+**Two interventions, two different answers.**
+
+**1. Greptile's arrival (Q1 2025) — confounded, don't attribute.** The rate steps from a stable
+2024 average of **49.2%** to **64.8%** and never comes back. Tempting, but Greptile's arrival
+coincides with mainstream AI coding assistants *and* a near-doubling of submissions
+(~280/quarter → ~500). Three things changed at once; this data cannot separate them.
+
+**2. The agent-fix prompts (Q4 2025) — a clean test, and a clean null.** This one *is*
+interpretable: Greptile was already in place, submission volume was already elevated, and only
+the feature changed. Its first appearance in the repo is precise — 2,300 PRs contain
+`Prompt To Fix With AI`, the earliest dated **Sep 30 2025** (#21880–#21888), right at the
+quarter boundary.
+
+| | Merged | Failed | n | Failure rate |
+|---|---:|---:|---:|---:|
+| **Before** (2025 Q1–Q3) | 497 | 983 | 1,480 | 66.4% |
+| **After** (2025 Q4–2026 Q2) | 759 | 1,569 | 2,328 | 67.4% |
+
+**Difference: +1.0 pp, 95% CI [−2.1, +4.0].** Statistically indistinguishable from zero, and
+pointing the *wrong* way if anything. Six quarters, 3,808 PRs, no detectable movement.
+
+> **The null is exactly what this file predicts, and that's why it matters.** Agent-fix prompts
+> make *code* findings cheaper to resolve. But code was never the binding constraint — the
+> things that kill these PRs are **duplicating something that already exists** and **not
+> answering the thread**. A tool that fixes code faster cannot move a rate governed by prior
+> art and attention, and it didn't. Handing contributors a better hammer doesn't help when the
+> problem isn't nails.
+
+*Caveat: a rate held flat while submission volume grew 2.5× is not literally "no effect" — it
+could mean quality-per-PR fell while tooling compensated. That story is unfalsifiable from
+counts alone. What can be said: **no net change in the odds any given submission ships.***
+
 ### NEW in Q2: time-to-merge doubled, and converged with the stale deadline
 
 | | Q1 | Q2 |

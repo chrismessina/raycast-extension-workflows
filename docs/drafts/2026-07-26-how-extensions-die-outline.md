@@ -208,6 +208,45 @@ caveats in the appendix section below. Backing detail lives in
    reviewer is the *author*, and the objection is design authority: *"Feature or UI changes are
    better proposed and discussed first, rather than implemented upfront."*
 
+## Section 4.5 — "But the robots got better at helping" (the null result)
+
+*This is the section that will get the piece shared by the AI/dev-tools crowd. It's a
+falsification test the author ran on their own thesis, in public.*
+
+*Exhibit F — ten-quarter series with two vertical intervention lines drawn on it.*
+
+| Quarter | Submissions | Failure rate | |
+|---|---:|---:|---|
+| 2024 Q1–Q4 | 297 / 281 / 263 / 277 | 48.1 / 45.9 / 51.0 / **52.0%** | stable ~49% |
+| 2025 Q1 | 509 | **64.8%** | ← Greptile starts reviewing |
+| 2025 Q2–Q3 | 471 / 500 | 67.1 / 67.4% | |
+| 2025 Q4 | 621 | 68.0% | ← *Prompt To Fix With AI* ships ~Sep 30 2025 |
+| 2026 Q1–Q2 | 988 / 719 | 67.5 / 66.8% | |
+
+**Intervention 1 — Greptile arrives (Q1 2025). Confounded; refuse to attribute it.**
+- Rate steps 49.2% → 64.8% and stays. But AI coding assistants went mainstream in the same
+  window *and* submissions nearly doubled. Three variables, one observation.
+- Beat: *this is where a worse post would claim a causal finding. Don't.*
+
+**Intervention 2 — agent-fix prompts (Q4 2025). Clean, and null.**
+- Why it's clean: Greptile already deployed, volume already elevated, only the feature changed.
+- Dating it is exact: 2,300 PRs contain `Prompt To Fix With AI`; earliest **Sep 30 2025**.
+
+| | n | Failure rate |
+|---|---:|---:|
+| Before (2025 Q1–Q3) | 1,480 | 66.4% |
+| After (2025 Q4–2026 Q2) | 2,328 | 67.4% |
+
+- **+1.0 pp, 95% CI [−2.1, +4.0].** Zero, across 3,808 PRs and six quarters.
+- **The payoff line — the null confirms the thesis rather than denting it:** agent-fix prompts
+  make *code* findings cheaper to resolve, but code was never the binding constraint.
+  Duplication and abandonment were. *A better hammer doesn't help when the problem isn't nails.*
+- Honest caveat to include: a flat rate while volume grew 2.5× could mean per-PR quality fell
+  and tooling compensated. Unfalsifiable from counts. The claim that survives: **no net change
+  in the odds any given submission ships.**
+- Meta-beat worth one sentence: this is what it looks like to test your own argument and report
+  the result either way.
+
 ## Section 5 — Why AI makes this worse *and* better
 
 - **Worse:** generation cost → ~0, so the marginal submission is less considered. The prior-art

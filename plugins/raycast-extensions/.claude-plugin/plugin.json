@@ -1,6 +1,6 @@
 {
   "name": "raycast-extensions",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Stage-keyed skills for the full Raycast-extension lifecycle: scaffold (new), develop (change code, modernize, house-style audit fix), ship (dep hygiene, house-style audit, Greptile gauntlet, Store compliance, PR, mirror, cleanup), review-pr (inbound review of a third-party PR).",
   "author": {
     "name": "Chris Messina",
