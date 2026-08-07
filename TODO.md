@@ -85,6 +85,74 @@ offending skill) on a deliberately-injected dangling reference, then GREEN (exit
 
 ## Still open
 
+### P1 — five defects in the three-way-merge sync rewrite (added 2026-08-07)
+
+**Found by an adversarial Codex review** of `raycast-karakeep`'s
+`.github/workflows/sync-from-upstream.yml` at commits `82b5517` + `2ce6304` (the rewrite
+that replaced the manifest approach with a committed `.github/upstream-sync-state.json`
+baseline). Each was then verified by reading the file directly, not taken on the
+reviewer's word. **These live in the deployed workflow, not the canonical template** —
+fixing one mirror alone would fork it, so fix the template and redeploy.
+
+**Context that shapes the priorities.** The version this replaced deleted an entire
+mirror — 4,060 lines including `package.json`, `tsconfig.json`, `README.md`, `AGENTS.md`
+and the workflow itself — **while reporting success**. The rewrite over-corrected into
+"never delete", which is why #1 exists. That trade is defensible; it just needs to be a
+decision rather than an accident.
+
+**The safety net holds.** Verified: the workflow only ever pushes to a
+`sync/upstream-<commit>` branch and opens a PR — nothing writes to `main`. The
+truncated-tree guard and the download hash checks are intact. So the worst case for #3
+is a bad diff a human rejects, not silent data loss.
+
+#### Ranked
+
+- [ ] **#5 — a closed-unmerged sync PR wedges all future runs.** (`:310-318`) The
+      dedupe check queries `gh pr list --state open` only, then runs an unconditional
+      `git push -u origin "$BRANCH"`. Close a sync PR without merging and the remote
+      branch survives; every later run for that same upstream commit fails on the push.
+      Nothing recovers until upstream moves or someone deletes the branch by hand.
+      **Bites soonest** — closing an unwanted sync PR is a normal thing to do.
+
+- [ ] **#2 — an upstream `.gitignore` change can wedge the sync permanently.**
+      (`:163`, `:253`, `:299`) Comparison runs `git check-ignore` against the **old**
+      checkout's rules, so it queues both the new `.gitignore` and a path that file will
+      newly ignore. At staging, `git add` refuses the ignored path, `xargs` exits
+      non-zero, and no PR is created — so `main` keeps the old `.gitignore` and the next
+      run repeats it identically. Self-perpetuating.
+
+- [ ] **#1 — upstream deletions never propagate.** (`:149`) The classification loop
+      iterates `upstream.tsv`, so a path that exists in the baseline and the mirror but
+      is *absent* upstream is never considered. `updated` stays zero, no PR is opened,
+      and the mirror keeps the file forever. **Decide deliberately:** is "never delete"
+      the intended contract after the earlier catastrophe, or should deletions surface
+      in the PR for a human to approve? If the former, say so in the workflow's comments
+      so the next reader doesn't read it as an oversight.
+
+- [ ] **#4 — a formerly-ignored path can never be imported.** (`:163-165`, `:277-284`)
+      While a mirror ignores `private/a`, the state file still records upstream's blob.
+      Remove the ignore rule later and the comparison sees upstream unchanged from
+      baseline but the mirror missing the file, files it under `kept-local`, and never
+      downloads it. A subsequent upstream edit then registers as a *conflict* instead of
+      repairing the gap.
+
+- [ ] **#3 — a valid-but-wrong state entry can overwrite local work.** (`:168-195`)
+      If `upstream-sync-state.json` records blob `L` while the true baseline was `A` and
+      the mirror holds local change `L`, then `mirror_moved=false` and the file is queued
+      for update — overwriting `L`. Missing or malformed state fails closed, and a merely
+      *stale* baseline is conservative; the hole is specifically a syntactically valid
+      entry that is wrong. Lands in a PR, so a human is still the checkpoint. Lowest of
+      the five for that reason.
+
+#### Verification (the same shape as the last sweep)
+
+Each fix wants a real run, not just edited YAML — the earlier version passed every
+static read while deleting a repo. `raycast-karakeep` is the reference deployment.
+
+- [ ] Fix in the canonical template first, then redeploy to the mirrors carrying the
+      rewrite (check which — not all 22 have it)
+- [ ] Confirm with a dispatched run per fix, reading the log rather than the exit status
+
 ### P1 — upstream sync — **LARGELY CLOSED 2026-07-31** (see below; original entry kept for context)
 
 > **Update 2026-07-31 (karakeep 2.4.0 ship).** The missing `schedule:` was only *one* of four
