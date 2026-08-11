@@ -68,11 +68,18 @@ No `as any`, no `: any`.
 ### `[lint]` Unwrap unknown catch values with the `instanceof Error` ternary
 
 A `catch` value is `unknown`. Stringify it with the exact guard — never touch
-`error.message` unguarded, and don't spin up a one-off `getErrorMessage` helper:
+`error.message` unguarded, and don't spin up a **one-off, in-repo** `getErrorMessage` helper:
 
 ```ts
 const errorMessage = error instanceof Error ? error.message : String(error);
 ```
+
+**Exemption — the shared kit.** `getErrorMessage` from `@chrismessina/raycast-kit`
+satisfies this rule and is *preferred* wherever the kit is already a dependency: it is
+strictly better than the ternary (see the kit section below for the fleet error shapes
+the bare ternary renders as `"[object Object]"`). The prohibition is on hand-rolling a
+*local* helper per repo, not on the one shared implementation. Use the literal ternary
+only where the kit is not available.
 
 This is Chris's standard across the fleet (17 of 21 self-authored extensions —
 e.g. `raycast-digger/src/hooks/useFetchSite.ts:42`,
@@ -132,6 +139,83 @@ catch (error) {
 }
 ```
 
+### `[both]` In a `no-view` command, never `showHUD` before a toast that carries actions
+
+The Copy-Error rule above is silently defeated in `no-view` commands by a single earlier `showHUD`. Three pieces of documented behavior compose into a trap:
+
+1. `showHUD` **closes the main Raycast window** — its stated purpose, not a side effect.
+2. `showToast` **degrades when the window is closed.** Raycast's docs describe that fallback inconsistently — `showHUD()` in one place, a system notification in another — but both are non-interactive, so the distinction doesn't change the outcome.
+3. Neither fallback renders actions, so `primaryAction` / `secondaryAction` are **dropped**.
+
+The code reads correct — the actions sit right there in the `showToast` call — and they never render. Nothing in the type system, the linter, or a diff review catches it. **Only a human running the command sees it.**
+
+- **HUDs cannot carry actions at all.** `showHUD(title, options)` accepts only `clearRootSearch` and `popToRootType`. There is no action parameter, so "add an action to the HUD" is never the fix — the fix is to stop using a HUD.
+- **If a `no-view` command offers any action on completion** — Show in Finder, Open, Copy Error, Retry — use a **Toast for the whole flow**: animated toast up front, mutate `message`/`title` for progress, terminal toast at the end. No `showHUD` anywhere in that command's path, *including inside shared `lib/` helpers it calls* — that is where it hides.
+- **HUD stays correct** for instant, action-free confirmations: "Copied", "Pinned", "Moved to Trash".
+- **Accept the trade-off:** a Toast keeps the Raycast window open where a HUD dismisses it. That is the price of interactivity; there is no third option that both closes the window and offers an action.
+
+```ts
+// no-view command, canonical shape
+const toast = await showToast({ style: Toast.Style.Animated, title: "Downloading", message: filename });
+
+toast.message = `${filename} — ${percent}%`; // progress: mutate in place
+
+// Terminal state. Mutating `toast.style` in place is equally supported (see the
+// kit section below); what matters here is that the user ends up looking at a
+// Toast rather than a HUD, so the action survives.
+await toast.hide();
+await showToast({
+  style: Toast.Style.Success,
+  title: "Download Complete",
+  message: filename,
+  primaryAction: { title: "Show in Finder", onAction: () => showInFinder(path) },
+});
+```
+
+- **Audit:** for each command with `"mode": "no-view"` in `package.json`, walk its entry file **and the `lib/` helpers it imports**. Flag any `showHUD` in a command that also builds a toast carrying `primaryAction`/`secondaryAction`.
+- **Evidence:** 2026-08-07, `raycast-fetch`. The single-download completion toast carried both "Open File" and "Reveal in Finder"; neither ever appeared, because the progress helper opened with `showHUD`. It survived a full code review, a house-style audit, and an adversarial Codex pass — Chris found it on the first real run. Converting the path to a Toast throughout fixed it, confirmed on screen.
+
+### `[both]` `Toast.Style.Animated` is a promise that work is in flight — never spin for a synchronous write
+
+An animated toast tells the user "wait, something is happening." If the operation is an instant `LocalStorage` write, a `setState`, or a `Clipboard.copy`, there is nothing to wait for: show the terminal Success toast directly, with no `Animated` phase at all.
+
+- **Reserve `Animated` for genuinely async work** — network requests, disk IO, spawned processes, anything with a plausible wait.
+- **For genuinely async work, both terminal patterns are supported.** Mutate in place (`toast.style = Toast.Style.Success`, or `failToast` for the failure half — see the kit section below), or `await toast.hide()` then show a fresh toast. Pick either; they are equivalent.
+- **Audit:** grep `Toast.Style.Animated`. For each, confirm genuinely async work is awaited between creation and the terminal state. Flag any whose only intervening work is `LocalStorage` / `setState` / `Clipboard`.
+
+**Evidence, and a correction worth recording.** 2026-07-27, `raycast-claude`: Chris screenshotted "Preset saved!" beside a still-spinning icon. The first diagnosis was *"mutating `toast.style` on a presented toast never swaps the animated icon"* and it was written down as a general law. **That claim is false** — Raycast's SDK documents live mutation as the supported pattern, and it demonstrably worked at other sites in that same codebase. The actual defect was that **15 of the 17 sites were instant `LocalStorage` writes that should never have had a spinner**. The fix was deleting the `Animated` phase, not changing how the terminal state is set. If you see the old claim resurface anywhere, this entry supersedes it.
+
+### `[both]` Reveal a file with `Action.ShowInFinder` / `showInFinder()`, never `open(path, "Finder")`
+
+`open(path, "Finder")` means "open this file **with** the Finder application". It is not the reveal API and does not reliably select the file in its containing folder. The correct primitives are the built-in `Action.ShowInFinder` (inside an `ActionPanel`) and `showInFinder(path)` (in a toast action or plain handler). The **component** supplies the right default title and icon for free; the **utility** takes only a path and simply reveals it — you own the surrounding title/icon there.
+
+- **Audit:** grep `open(` with `"Finder"` as its second argument.
+- **Evidence:** 2026-08-07, `raycast-fetch` — two action panels labelled "Reveal in Finder" were opening the file with Finder rather than revealing it.
+
+#### Wording: "Show in Finder" — and on `Action.ShowInFinder`, pass no `title` at all
+
+Raycast's term is **Show**, not Reveal or Open. But the rule that matters is stronger than wording, because the title carries the platform:
+
+```
+title?: string;
+@defaultValue `"Show in Finder"` on macOS and `"Show in Explorer"` on Windows
+icon?:  @defaultValue Icon.Finder on macOS and Icon.HardDrive on Windows
+```
+*(`@raycast/api` `ShowInFinderProps`, v1.104.23)*
+
+So **any** `title` on `<Action.ShowInFinder>` — including the "correct" `"Show in Finder"` — hardcodes macOS wording onto Windows. Omit it and both platforms are right for free.
+
+Hand-written titles (`toast.primaryAction`, a custom `<Action>`) don't get that, so they must adapt:
+
+```ts
+title: isMacOS ? "Show in Finder" : "Show in Explorer"
+```
+
+Not `"Show in Folder"` — Raycast's Windows string is **Explorer**.
+
+- **Audit:** `rg -i '"(reveal|open) in finder"'` → wording; `rg -A3 '<Action\.ShowInFinder' | rg 'title='` → must return nothing.
+- **Evidence:** 2026-08-10 fleet audit — 4 self-authored toast actions said "Reveal"/"Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right.
+
 ### `[both]` Empty/error state copy: short title, one-line description, steps in the actions
 
 `List.EmptyView` (and `Toast`) copy follows one shape: an icon, a short imperative
@@ -139,12 +223,17 @@ title, and a **single-sentence** description. Multi-step guidance goes in the
 `actions`, not the description.
 
 **Why it's a hard rule, not a preference:** `List.EmptyView`'s `description`
-**collapses newlines** — a multi-line string renders as one run-on line. This is
-documented in Chris's own code
-(`raycast-airbuddy/src/components/error-views.tsx:43-44`: *"List.EmptyView's
-`description` collapses newlines — … Keep every description to ONE short line and
-put the steps in the actions."*). A long or multi-line description is therefore a
-defect, not a style nit.
+**collapses newlines** — a multi-line string renders as one run-on line, so the steps
+you carefully put on separate lines arrive as one wall of text.
+
+> **Sourcing:** this is *observed behavior*, not a documented API guarantee — the SDK
+> types specify only `description: string`. The evidence is Chris's own note at
+> `/Users/messina/Developer/GitHub/chrismessina/raycast-airbuddy/src/components/error-views.tsx:43`
+> (*"List.EmptyView's `description` collapses newlines — … Keep every description to ONE
+> short line and put the steps in the actions."*). **Repro if you need to confirm it:**
+> render a `List.EmptyView` with `description={"line one\nline two"}` and look at the
+> screen. The rule is good regardless of the mechanism — a one-line description with the
+> steps in the actions is the better empty state either way.
 
 - **Error `Detail` screens** use the heading form `` `# Error\n\n${message}` ``
   (`raycast-fathom/src/search-meetings.tsx:335`,
@@ -214,7 +303,7 @@ did, which defeats the point of the command.
   bare `"Toggled"` / `"… Toggled"` with no on/off or named result, and flag it. Not a
   hard `[verify]` assertion (the "genuinely unknowable" carve-out is a judgment call).
 
-### `[build]` Count-bearing copy uses correct singular/plural agreement — never `item(s)`
+### `[both]` Count-bearing copy uses correct singular/plural agreement — never `item(s)`
 
 Any user-facing string that interpolates a count must agree grammatically with that
 count across **all three** cases: zero, one, and many. `"1 items"` and `"No devices
@@ -238,7 +327,8 @@ copy the **user reads** (they're fine in `logger.*` debug output, which no user 
   render an unconditional `${n} items` that says `"1 items"` at count 1. (Terse
   `List.Section` subtitles are the softest case — but the pattern is fleet-wide and the
   fix is cheap.)
-- **Audit:** the greppable subset is a `[verify]`-grade check — grep user-facing copy
+- **Audit:** the greppable subset is what `ship` asserts (this rule is `[both]` for that
+  reason — as `[build]` the check below never actually ran). Grep user-facing copy
   for the literal `(s)` / `(es)` pluralization crutch and for `length}\s*<plural-noun>`
   templates with no adjacent `=== 1` guard. General agreement across a computed message
   stays a `[build]` judgment.
@@ -285,7 +375,7 @@ The house-style rule and the ergonomic path point in opposite directions, and th
 path wins. A dependency inverts that: the compliant call becomes the shortest one.
 
 **Status:** published — [`@chrismessina/raycast-kit`](https://www.npmjs.com/package/@chrismessina/raycast-kit)
-v0.1.0 (2026-07-25), zero runtime deps, `@raycast/api` peer. First adoption: `get-app-icon`
+v0.1.3 (first published 2026-07-25), zero runtime deps, `@raycast/api` peer. First adoption: `get-app-icon`
 (`c1de11b`), which converted 4 non-compliant failure toasts and deleted a duplicate
 `pluralize`, net −22 lines.
 
@@ -310,9 +400,9 @@ catch (error) { failToast(toast, error, { title: "Export Failed" }); }
 
 // BEFORE — says "1 items" at count 1
 `${n} items`  /  `${n} item(s)`
-// AFTER
-countOf(n, "item")                      // "0 items" · "1 item" · "7 items"
-countOf(n, "item", { zero: "No items" }) // worded zero, per the count rule above
+// AFTER — user-facing copy always passes `zero`, per the count rule above
+countOf(n, "item", { zero: "No items" }) // "No items" · "1 item" · "7 items"
+countOf(n, "item")                       // "0 items" — numeric zero; internal/among-other-counts only
 ```
 
 `showError` swallows `AbortError` by default — a user typing the next keystroke cancels the
@@ -346,7 +436,7 @@ and then it fails as `Cannot find module '@raycast/api'` with a stack naming `to
 error never mentions the kit's export map, so it reads like a broken install rather than a
 wrong entry point.
 
-*(Receipt, `claude-artifacts` 2026-07-25 — the kit's first adoption: a root import of
+*(Receipt, `claude-artifacts` 2026-07-25 — an early kit adoption, hours after `get-app-icon`: a root import of
 `getErrorMessage` into the index-parser module broke all 11 of its headless fixtures at once.
 The first fix attempted was a hand-rolled local copy plus a comment claiming the kit "can't"
 be used in pure modules — wrong, and the kit's README had documented the subpath all along.
@@ -372,7 +462,7 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 **Decision 1 — Does a `Keyboard.Shortcut.Common` member match the action's semantics?**
 
 - **Yes → use the `Common` constant.** Always. It is already platform-aware, so it is correct on every platform with no extra work. Never hand-roll a shortcut that `Common` already covers, and never wrap a `Common` constant in a platform-explicit object.
-- **No → a custom shortcut is correct and expected.** The `Common` set is 17 members; it does not cover everything (no "switch mode", "toggle setting", "connect"). Do not force a bad semantic match — a wrong `Common` is worse than an honest custom shortcut.
+- **No → a custom shortcut is correct and expected.** The `Common` set is 16 members (`@raycast/api` 1.104.1); it does not cover everything (no "switch mode", "toggle setting", "connect"). Do not force a bad semantic match — a wrong `Common` is worse than an honest custom shortcut.
 
 **Decision 2 — For custom shortcuts only: what does `platforms` in `package.json` say?**
 
@@ -387,7 +477,7 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
   ```
   A bare `{ modifiers: ["cmd"], … }` on a cross-platform extension is the defect: `cmd` doesn't exist on Windows, so the shortcut is silently broken there. (This is the miss that shipped ⌘-only shortcuts into an open Store PR on 2026-07-13.)
 
-> **API casing:** the platform keys are **`macOS`** and **`Windows`** (capital W). TypeScript rejects lowercase `windows` — the type is `{ macOS: {...}, Windows: {...} }`.
+> **API casing:** the platform keys are **`macOS`** and **`Windows`** (capital W). Lowercase `windows` still typechecks but is marked `@deprecated Use Windows instead` in the SDK — always write `Windows`.
 
 | `platforms`         | `Common` match | Write                                                 |
 | ------------------- | -------------- | ----------------------------------------------------- |
@@ -429,8 +519,14 @@ Either is fine; an *ungated, uncaught* AI call is the defect.
   the truncated-title fallback `getVideoDisplayTitle()` already provides.
 - Same pattern applies to any capability behind `canAccess` (e.g.
   `BrowserExtension` — `raycast-memory-store/src/lib/background.ts:25`).
-- **Audit:** grep `useAI(` / `AI.ask` and assert **either** a `canAccess(AI)` guard
-  **or** an enclosing try/catch on that path.
+- **Audit:** the failure mode here is a **green check on a real violation**, so the pattern
+  has to be tight. A literal `useAI (` / `useAI(` grep misses `useAI  (`, a renamed import
+  (`import { useAI as ask }`), and property access (`AI["ask"]`). Match
+  `\b(useAI|AI\s*\.\s*ask|AI\s*\[\s*["']ask["']\s*\])\s*\(` **and** resolve aliases by
+  first grepping the `@raycast/api` import specifiers in each file for `useAI`/`AI`.
+  For each hit assert **either** a `canAccess(AI)` guard **or** an enclosing try/catch on
+  that path. AST detection (`ts-morph`/`typescript` compiler API) is the airtight version if
+  this ever produces a miss in practice.
 
 ### `[both]` Interval-driven commands must branch on `environment.launchType`
 
@@ -469,8 +565,10 @@ assertion that would false-positive on every subtitle-less menu-bar command.
 ### `[both]` `environment.supportPath` is for INTERNAL state only — user files go to a preference dir
 
 `supportPath` is the writable per-extension directory — the right home for caches,
-indexes, and command state the user never opens by hand. (Not `assetsPath`, which is
-the **read-only** path to the extension's *bundled* assets — don't write there.)
+indexes, and command state the user never opens by hand. (Not `assetsPath`, which points
+at the extension's *bundled* assets — that directory is part of the installed bundle and
+gets replaced on every update, so anything you write there is lost. The SDK does not
+document it as filesystem-read-only; the reason to avoid it is durability, not permissions.)
 Anything the user is meant to **find in Finder** (exports, downloads, generated
 deliverables) must go to a user-visible directory — an
 `exportDirectory`/`downloadDirectory` preference defaulting to `~/Downloads`.
@@ -499,7 +597,12 @@ repos (`digger`, `google-maps`, `reader`, `trimmy`, `wrap-unwrap`),
 `trimmy/src/trim-core.ts:91`, both macOS-guarded fallbacks). Codifying the winner so
 a future extension doesn't regress to `osascript`.
 
-- **Audit:** grep for `osascript`/`System Events` reading a selection; prefer the API.
+- **Audit:** a bare `osascript`/`System Events` grep is **too broad** — it fires on
+  AppleScript/JXA used for unrelated automation (`get-app-icon` opens Finder's Info
+  window; `airbuddy` drives its own JXA), neither of which reads a selection. Narrow to
+  scripts that actually read one: match `osascript`/JXA **co-occurring** with a selection
+  term (`selection of`, `selected items`, `get selection`, `selectedText`, `sel of`), then
+  eyeball the hits. Prefer the API in every case that survives.
 
 > **Underused — reach for these on the next fitting extension.** These have little
 > or no current adoption and **no** live defect, so they are not rules — but Chris's
@@ -520,12 +623,16 @@ a future extension doesn't regress to `osascript`.
 
 ## Icons
 
-### `[both]` A bundled SVG/PNG icon needs an explicit `tintColor` — a bare filename is invisible in one theme
+### `[both]` A monochrome bundled icon needs a theme-aware treatment — a bare filename is invisible in one theme
 
-Referencing a custom asset by bare filename — `icon="artifact_file.svg"` — renders it
-with **its own baked-in fill**, which Raycast does not adjust for the active theme. A
-glyph authored dark reads fine in light mode and **disappears against the dark
-background** (and vice versa). Pass the object form instead:
+**Scope: monochrome glyphs shipped as a single asset.** Referencing one by bare filename
+— `icon="artifact_file.svg"` — renders it with **its own baked-in fill**, which Raycast
+does not adjust for the active theme. A glyph authored dark reads fine in light mode and
+**disappears against the dark background** (and vice versa).
+
+Two supported fixes; either satisfies this rule.
+
+**1. Tint from the code side** (preferred for a single monochrome asset):
 
 ```tsx
 const ARTIFACT_ICON: Image.ImageLike = {
@@ -534,27 +641,37 @@ const ARTIFACT_ICON: Image.ImageLike = {
 };
 ```
 
-**`fill="currentColor"` in the SVG does NOT fix this** — and believing it does is the
-trap. Raycast rasterizes a bundled asset with no inherited text color, so
-`currentColor` resolves to a default that is just as wrong in one of the two themes.
-The tint has to come from the **code** side. (Learned the hard way on
-`claude-artifacts`, 2026-07-25: the icon was switched to `currentColor` specifically
-to fix dark mode, shipped, and was still invisible in dark mode on the next screenshot.
-The fix was `tintColor`, not the asset.)
+**2. Ship a themed source pair** — `Image.Source` accepts `{ light, dark }` directly, and
+Raycast also picks up an implicit `foo@dark.png` sibling. Correct, and **not** a defect:
 
-- **Which color:** `Color.PrimaryText` for a glyph that should read like the row title;
-  `Color.SecondaryText` for a de-emphasised accessory; a semantic `Color.*` (Red /
-  Green / Orange) where the icon carries status. **Never a raw hex** — the `Color.*`
-  enum is the theme-safe layer, and a hex string reintroduces the same bug.
+```tsx
+const ICON: Image.ImageLike = { source: { light: "glyph-light.svg", dark: "glyph-dark.svg" } };
+```
+
+- **Which color, when tinting:** `Color.PrimaryText` for a glyph that should read like the
+  row title; `Color.SecondaryText` for a de-emphasised accessory; a semantic `Color.*`
+  (Red / Green / Orange) where the icon carries status. **Prefer the semantic `Color.*`
+  enum over a raw hex** — not because hex is broken (`Color.Raw` is fully supported and
+  documents HEX/RGB/HSL, and `Color.Dynamic` takes `{ light, dark, adjustContrast }`), but
+  because the enum keeps one palette across the fleet and tracks Raycast's themes for free.
+  Reach for hex only when the design genuinely needs a color the enum doesn't carry.
+- **Don't count on `fill="currentColor"` in the SVG.** *Observed on `claude-artifacts`,
+  2026-07-25:* the icon was switched to `currentColor` specifically to fix dark mode,
+  shipped, and was **still invisible in dark mode** on the next screenshot — the fix was
+  `tintColor`, not the asset. Stated as an observation, not an SDK law: Raycast's changelog
+  records a `currentColor` SVG-handling fix, so behavior may differ by version, and this has
+  not been re-tested since. Use one of the two supported mechanisms above and you don't have
+  to care which way it currently falls.
 - **Exempt:** full-color raster assets (logos, app icons, screenshots) that are
   *meant* to keep their own colors, and `Icon.*` built-ins (already theme-aware).
 - **Not the same as `environment.appearance`** — that is for graphics you *render*
   yourself (SVG charts you generate). For a bundled asset handed to a component,
   `tintColor` is the mechanism.
-- **Audit:** grep `icon=` / `source:` for a bare `.svg`/`.png` string with no adjacent
-  `tintColor`, and flag it for a monochrome glyph. A green `ray lint` proves nothing
-  here — no rule checks it, and the defect is invisible until someone opens the other
-  theme.
+- **Audit:** grep `icon=` / `source:` for a bare `.svg`/`.png` string that has **neither**
+  an adjacent `tintColor` **nor** a `{ light, dark }` source **nor** an `@dark` sibling file
+  in `assets/`, and flag it for a monochrome glyph. Do not flag a themed pair — it is
+  already correct. A green `ray lint` proves nothing here: no rule checks it, and the defect
+  is invisible until someone opens the other theme.
 
 > **Check both themes before calling an icon done.** This class of defect is
 > undetectable from a build, a lint, and a single screenshot — it needs the theme
@@ -589,12 +706,34 @@ don't pile everything into one command file, and don't invent parallel names
 
 ## README
 
-### `[verify]` Original extensions open with the social-badge preamble
+### `[verify]` Original extensions ship the social-badge preamble and `FUNDING.yml`
 
-Every **self-authored** extension's `README.md` starts with the title, then the
-centered badge block (Follow / Stars / Raycast Store), then the one-line tagline —
-adapted per extension. (Applies to `chrismessina`-authored extensions; do **not**
-impose it on forks you contribute upstream.)
+**Going-forward standard, not a description of the fleet as it stands.** The badge block
+post-dates a good number of already-published extensions, so a census will show plenty of
+misses — that is expected backlog, not drift. Apply it to anything new, and backfill on the
+next substantive touch. (Applies to `chrismessina`-authored extensions; do **not** impose
+it on forks you contribute upstream.)
+
+Two artifacts:
+
+1. **`README.md`** starts with the title, then the centered badge block
+   (Follow / Stars / Raycast Store), then the one-line tagline — adapted per extension.
+2. **`.github/FUNDING.yml`** — every self-authored mirror carries it. All existing copies
+   are byte-identical, so this is a straight copy from any repo that has one; there is
+   nothing per-extension to edit.
+
+> **The badge implies publication.** The third badge deep-links to
+> `raycast.com/chrismessina/<store-slug>`, which 404s until the extension is actually in
+> the Store. Add the block **at publish time**, not at scaffold time — and when auditing,
+> check the Store URL resolves rather than only that the block exists. `FUNDING.yml` has no
+> such constraint; it is safe from day one.
+
+- **Audit:** for self-authored extensions, assert the preamble **and** `.github/FUNDING.yml`.
+  Report unpublished extensions separately rather than as violations. Watch for `.github`
+  appearing in `.gitignore` — it silently prevents `FUNDING.yml` from ever being committed.
+- **Census 2026-08-10:** 25 self-authored extensions, 12 published. Of those 12: 4 complete,
+  3 have the badge but no `FUNDING.yml`, 5 have neither. `central-icon-system` carries the
+  badge while its Store URL 404s — a live dead link, and the reason for the publish-time rule.
 
 ```markdown
 # <Extension Name>
@@ -703,11 +842,22 @@ finds it and runs *that* instead of erroring.
 happens to be:
 
 ```bash
-# From anywhere in the tree: find the package.json holding a real Raycast `commands` ARRAY.
+# Find the package.json holding a real Raycast `commands` ARRAY.
 # Testing `.commands` alone is too loose — `{"commands":"anything-truthy"}` passes `jq -e`
 # and would misidentify the root (verified 2026-07-24).
-find . -name package.json -not -path '*/node_modules/*' \
-  -exec sh -c 'jq -e "(.commands|type==\"array\") and (.commands|length>0)" "$1" >/dev/null 2>&1 && dirname "$1"' _ {} \;
+# Walk UP first, THEN search descendants: you are usually already *inside* the extension,
+# and a bare `find .` only looks downward — from `myext/src/lib` it silently returns
+# nothing (bug found and the fix verified against a disposable tree, 2026-08-10).
+find_ext_root() {
+  _is_ext() { jq -e '(.commands|type=="array") and (.commands|length>0)' "$1" >/dev/null 2>&1; }
+  d=$PWD
+  while [ "$d" != "/" ]; do
+    if [ -f "$d/package.json" ] && _is_ext "$d/package.json"; then echo "$d"; return 0; fi
+    d=$(dirname "$d")
+  done
+  find . -name package.json -not -path '*/node_modules/*' \
+    -exec sh -c 'jq -e "(.commands|type==\"array\") and (.commands|length>0)" "$1" >/dev/null 2>&1 && dirname "$1"' _ {} \;
+}
 ```
 
 Ambiguous result (several matches) → ask which extension, don't guess. Then `cd` there and
