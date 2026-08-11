@@ -185,16 +185,18 @@ An animated toast tells the user "wait, something is happening." If the operatio
 
 **Evidence, and a correction worth recording.** 2026-07-27, `raycast-claude`: Chris screenshotted "Preset saved!" beside a still-spinning icon. The first diagnosis was *"mutating `toast.style` on a presented toast never swaps the animated icon"* and it was written down as a general law. **That claim is false** — Raycast's SDK documents live mutation as the supported pattern, and it demonstrably worked at other sites in that same codebase. The actual defect was that **15 of the 17 sites were instant `LocalStorage` writes that should never have had a spinner**. The fix was deleting the `Animated` phase, not changing how the terminal state is set. If you see the old claim resurface anywhere, this entry supersedes it.
 
-### `[both]` Reveal a file with `Action.ShowInFinder` / `showInFinder()`, never `open(path, "Finder")`
+### `[both]` Show a file with `Action.ShowInFinder` / `showInFinder()`, never `open(path, "Finder")`
 
-`open(path, "Finder")` means "open this file **with** the Finder application". It is not the reveal API and does not reliably select the file in its containing folder. The correct primitives are the built-in `Action.ShowInFinder` (inside an `ActionPanel`) and `showInFinder(path)` (in a toast action or plain handler). The **component** supplies the right default title and icon for free; the **utility** takes only a path and simply reveals it — you own the surrounding title/icon there.
+`open(path, "Finder")` means "open this file **with** the Finder application". It is not the show-in-Finder API and does not reliably select the file in its containing folder. The correct primitives are the built-in `Action.ShowInFinder` (inside an `ActionPanel`) and `showInFinder(path)` (in a toast action or plain handler). The **component** supplies the right default title and icon for free; the **utility** takes only a path and simply shows it — you own the surrounding title/icon there.
+
+**Also watch the inverse:** a label promising Finder while the handler calls bare `open(filePath)`, which opens the file in its default app and never involves Finder. The label is the spec — make the call match it.
 
 - **Audit:** grep `open(` with `"Finder"` as its second argument.
 - **Evidence:** 2026-08-07, `raycast-fetch` — two action panels labelled "Reveal in Finder" were opening the file with Finder rather than revealing it.
 
 #### Wording: "Show in Finder" — and on `Action.ShowInFinder`, pass no `title` at all
 
-Raycast's term is **Show**, not Reveal or Open. But the rule that matters is stronger than wording, because the title carries the platform:
+Raycast's term is **Show**, not Reveal or Open — in action titles, error copy, and any user-visible string. ("Reveal" is Finder's own menu wording, which is exactly why it keeps creeping in.) But the rule that matters is stronger than wording, because the title carries the platform:
 
 ```
 title?: string;
@@ -213,8 +215,8 @@ title: isMacOS ? "Show in Finder" : "Show in Explorer"
 
 Not `"Show in Folder"` — Raycast's Windows string is **Explorer**.
 
-- **Audit:** `rg -i '"(reveal|open) in finder"'` → wording; `rg -A3 '<Action\.ShowInFinder' | rg 'title='` → must return nothing.
-- **Evidence:** 2026-08-10 fleet audit — 4 self-authored toast actions said "Reveal"/"Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right.
+- **Audit:** `rg -n 'title[=:] *["`].*\b[Rr]eveal'` → any user-facing "Reveal" (not just "in Finder" — it hides in "Reveal Index File" and "Could Not Reveal…"); `rg -A3 '<Action\.ShowInFinder' | rg 'title='` → must return nothing. Internal identifiers (`revealOnComplete`, a `RevealInFinderAction` component) are not user-facing and don't block.
+- **Evidence:** 2026-08-10 fleet audit — 8 user-facing strings across 4 self-authored extensions said "Reveal" or "Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right. Two `raycast-fathom` toasts labelled "Open in Finder" called bare `open(filePath)` — the file opened in its default app and Finder never appeared.
 
 ### `[both]` Empty/error state copy: short title, one-line description, steps in the actions
 
