@@ -29,6 +29,84 @@ There are **two opposite flows**, and this doc's "submission flow" below is only
   rewritten and 5 more mirrors wired up; the one remaining gap is a scheduled
   fork-sync on `chrismessina/extensions` (see that README).
 
+### 🚨 The inbound sync MUST NOT overwrite blindly
+
+**A mirror is downstream of the monorepo, but it is also where local work starts.**
+Those two facts collide, and the naive implementation resolves the collision by
+destroying local work:
+
+```bash
+curl ... -o "$path"     # overwrite, no comparison
+git add -- "$path"      # commit it
+```
+
+**Verified damage, 2026-08-01 on `raycast-claude-artifacts`:** that loop reverted a
+local README fix (a dead `docs/shelf.md` link, fixed locally, not yet shipped
+upstream) by restoring the monorepo's older copy — and reported success. Re-running
+the same comparison the next day showed it would have destroyed **three** files: the
+README plus an entire unshipped feature (two `src/` modules).
+
+**The cron schedule is not the bug — overwriting without comparing is.** A
+merge-triggered sync running that same loop loses the same edit, just less often,
+which is *worse*: rare corruption is the kind you stop watching for. Do not "fix"
+this by changing the trigger.
+
+**The contract every mirror's sync workflow must satisfy:**
+
+1. **Never push to `main`.** Open a PR. Merging it is the only write to `main`, so
+   there is no unattended path that can revert local work.
+2. **Three-way compare per file**, against a committed state file
+   (`.github/upstream-sync-state.json`) recording upstream blob SHAs at the last
+   sync. Blob SHAs are content-addressed, so "changed" is exact:
+
+   | upstream changed? | mirror changed? | action |
+   | --- | --- | --- |
+   | no | no | nothing |
+   | **yes** | no | take upstream (CHANGELOG stamp, recompressed PNGs, contributor fixes) |
+   | no | **yes** | **keep local** |
+   | **yes** | **yes** | **halt** — open an issue, sync *nothing* |
+
+3. **A conflicting run syncs nothing at all** — never a partial apply, which is the
+   confusing state to debug.
+4. **No baseline (first run) + differing local file → keep local.** Fail safe toward
+   local work.
+5. **Keep the cron** *and* add `repository_dispatch`. The dispatch gives an immediate
+   sync after your own PR merges; the cron catches the case a trigger structurally
+   cannot — **someone else's PR to your extension merging upstream**, where you are
+   not the author and may never see it. That is the case that actually causes silent
+   drift.
+
+Reference implementation:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/.github/workflows/sync-from-upstream.yml`,
+with the rationale in
+`/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/.github/mirror-sync.md`
+(kept under `.github/` deliberately — `ray publish` excludes that directory, so the
+doc lives in the mirror without shipping to the Store).
+
+**Fleet status (2026-08-03):** `raycast-claude-artifacts` has the safe version on
+`main`. The other five — `raycast-digger`, `raycast-get-app-icon`,
+`raycast-store-updates`, `raycast-karakeep`, `raycast-reader` — have it **in an open
+PR** (`ci/safe-upstream-sync`); they still run the blind-overwrite version until
+those merge.
+
+**Porting checklist** (what actually varies per repo — everything else is verbatim):
+
+1. Copy the workflow, then restore that repo's **own cron minute** (staggered across
+   the fleet: 17/23/31/41/45/59) and its **`UPSTREAM_EXT_DIR`** override if set
+   (`raycast-reader` → `reader-mode`; the rest are empty).
+2. **Seed `.github/upstream-sync-state.json`** from the current upstream tree, or the
+   first run has no baseline. Assert a plausible file count (≥5) before writing it —
+   a truncated or failed fetch would otherwise seed an empty baseline, and every
+   local file then reads as "keep", masking real upstream changes indefinitely.
+3. **Dry-run the compare before pushing.** On 2026-08-03 this surfaced that
+   `raycast-digger` carries **27 local-only files** — a `@ianvs/prettier-plugin-sort-imports`
+   pass (commit `5767aca`) that never shipped upstream. Verified formatting-only
+   (identical once `import` lines are excluded). The old workflow would have reverted
+   all 27 on digger's next cron; the new one keeps them.
+4. Validate the YAML with `npx js-yaml <file>` — an unquoted `: ` inside a `run:`
+   string parses locally as a mapping and fails on GitHub. Caught exactly this in the
+   reference implementation before it shipped.
+
 ## Submission flow (outbound — what actually works, verified)
 
 The reliable, manual flow for getting local work into the Store:
@@ -38,7 +116,11 @@ The reliable, manual flow for getting local work into the Store:
 2. **Verify local `main` == published v1.x** before trusting it as the baseline.
    Sparse-fetch the published dir and diff (see sparse-checkout-discipline.md). For
    Bookface they were byte-identical — local main genuinely was the published source.
-3. **Push the local work** to the standalone repo's `main`.
+3. **Land the local work in the standalone repo** — branch → PR → squash-merge to
+   `main`, not a direct push. The inbound sync compares against `main`, so work that
+   is merged there is *seen* and preserved; work sitting on an unmerged branch is
+   invisible to it. (Direct pushes still work, but the PR path is what keeps the
+   mirror's own history reviewable when contributors are involved.)
 4. **Sync the extension dir into the fork**: in a sparse checkout of the monorepo,
    copy ONLY the published file set (see "What ships" below) into
    `extensions/<name>/`, commit on a branch (`update/<name>-<topic>`), push to the
@@ -81,6 +163,43 @@ README.md  tsconfig.json
 `.github/docs/**` (review/findings docs, fixtures), `.github/assets/**` (icon
 sources), `CLAUDE.md`. Use the published dir's file list as the allow-list, not a
 blanket copy of the working repo.
+
+### Grep for inbound links before you drop a file
+
+Excluding a file silently breaks every link pointing *at* it. Nothing in `ray lint`,
+`ray build`, or CI checks relative Markdown links, so a dead pointer merges clean and
+404s for every reader. This applies to **both routes** — `ray publish` drops files
+just as a hand-copied allow-list does.
+
+For each excluded path, grep the *shipping* docs for references to it:
+
+```bash
+# $EXCLUDED = the paths you are NOT shipping (shelf.md, HANDOFF.md, CLAUDE.md, …)
+for f in $EXCLUDED; do
+  grep -rn "$(basename "$f")" README.md docs/ CHANGELOG.md 2>/dev/null \
+    && echo "^^ inbound link to excluded $f — fix before shipping"
+done
+```
+
+Rewrite the prose to stand alone rather than deleting the sentence — the idea is
+usually still worth stating, just without the pointer.
+
+Then verify the links that *do* ship actually resolve, from each link's own
+directory (a `../` link in `docs/` resolves differently than the same string in
+`README.md`):
+
+```bash
+grep -rn -oE '\]\((\.{1,2}/[A-Za-z0-9_./-]+\.(md|sh|ts|tsx|json|svg|png))\)' \
+  README.md docs/**/*.md CHANGELOG.md 2>/dev/null \
+| sed -E 's/:[0-9]+:\]\(/\t/; s/\)$//' | sort -u \
+| while IFS=$'\t' read -r src rel; do
+    [ -e "$(dirname "$src")/$rel" ] || echo "BROKEN  $rel  <- $src"
+  done
+```
+
+Silence means every link resolves. Run this **before** the PR, not after: a merged
+README is a patch PR to fix. *(Cost us a dead `docs/shelf.md` pointer in
+`claude-artifacts` v1.0 — caught only after merge, 2026-07-27.)*
 
 ## Assets gotcha (real, cost us a near-miss)
 

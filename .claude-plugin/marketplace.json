@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Chris's Raycast-extension tooling: lifecycle-stage skills + upstream-sync workflows.",
-    "version": "0.1.0"
+    "version": "0.5.0"
   },
   "plugins": [
     {
