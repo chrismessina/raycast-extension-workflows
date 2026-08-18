@@ -24,8 +24,22 @@ The `<!-- SC_OFF -->` / `<!-- SC_ON -->` HTML comments Reddit wraps around the r
 ### Command process isolation
 Each command in a Raycast extension runs in its own operating-system process, so module-level variables and reactive framework state are private to one command and are never shared with another. State that must be honored across commands (a rate-limit cooldown, for example) has to live in the shared Raycast cache, and any *correctness gate* that reads it must read synchronously at the decision point — reactive/cached copies of that state lag across process boundaries and are safe only for display.
 
+Reading synchronously is sufficient only for a *gate*. Shared state that commands **mutate** needs more: two processes can each read the same prior value, each write a complete and well-formed result, and still lose one of the two updates. Making the write atomic prevents a torn or corrupt store but does not prevent that lost update — only a Lock lease does, and the whole read-decide-write cycle has to sit inside it.
+
 ### Extension root
 The directory holding the `package.json` that carries Raycast manifest keys — as distinct from the repository root, which is the same directory only for a standalone extension repo and is one or more levels up for anything derived from the extensions monorepo. Every build, lint, and publish command resolves the manifest by walking *upward* from the working directory to the nearest `package.json`, so running one above the extension root either fails with an error that names the package manager rather than the path, or — when an unrelated ancestor manifest exists — silently operates on that other package and reports success.
+
+### Development renderer replay
+Raycast, outside a production environment, mounts a command's React tree in strict mode and replays effect setup, so any effect body — including a network fetch — executes twice per launch. Production launches do not replay, which makes duplicated work observed while developing an artifact of the harness rather than a defect in the extension.
+
+Two consequences follow, and both mislead. Diagnosing the duplication by reading the extension's own source cannot succeed, because the cause is in the host runtime. And the host runtime is a *different installed copy* of the Raycast API package than the one in the extension's dependencies, so searching the local copy for the behavior returns nothing — an absence that proves nothing about what actually runs. A fix that must survive the replay coalesces the duplicated work for the replay window only, deliberately narrower than an in-flight lock, so a later genuine refresh still starts new work.
+
+### Lock lease
+A claim on a shared store that one command process holds while it completes a read-decide-write cycle, expressed as a file whose exclusive creation is the thing that grants it. Exclusive creation is what makes the claim safe; every other part of the mechanism exists only to handle a holder that died mid-cycle without releasing.
+
+Three properties are individually load-bearing and none is redundant: the lease carries an **ownership mark**, so a process only ever releases the lease it actually holds; the holder **refreshes** the lease while it works, so a slow-but-alive holder is never mistaken for a dead one; and a process reclaiming an abandoned lease **re-checks both the mark and the age at the instant before it reclaims**, so it cannot destroy a lease a successor has since taken. Cleanup of anything the cycle owns belongs inside the lease, after the commit — releasing first lets a concurrent writer slip in and have its work deleted by the cleanup. Network calls never belong inside a lease, since holding one across an unbounded wait is what makes a live holder look dead.
+
+A lease built only from portable filesystem primitives keeps one irreducible race, because those primitives offer no way to make removal conditional on ownership. Schemes that appear to close it — giving each claim its own name among them — relocate the race rather than remove it, and have measured worse. The residual is therefore accepted rather than engineered away: its trigger requires a holder to stall between two adjacent operations for longer than the interval that declares it dead, and because writes are atomic underneath, its worst outcome is one lost update and never a damaged store.
 
 ## Fleet conventions
 
