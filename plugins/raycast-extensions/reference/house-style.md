@@ -200,23 +200,32 @@ Raycast's term is **Show**, not Reveal or Open — in action titles, error copy,
 
 ```
 title?: string;
-@defaultValue `"Show in Finder"` on macOS and `"Show in Explorer"` on Windows
+@defaultValue `"Show in Finder"` on macOS and … on Windows   ← the Windows half MOVES
 icon?:  @defaultValue Icon.Finder on macOS and Icon.HardDrive on Windows
 ```
-*(`@raycast/api` `ShowInFinderProps`, v1.104.23)*
 
-So **any** `title` on `<Action.ShowInFinder>` — including the "correct" `"Show in Finder"` — hardcodes macOS wording onto Windows. Omit it and both platforms are right for free.
+So **any** `title` on `<Action.ShowInFinder>` — including the "correct" `"Show in Finder"` — hardcodes macOS wording onto Windows. Omit it and both platforms are right for free, *and stay right across upgrades*.
 
-Hand-written titles (`toast.primaryAction`, a custom `<Action>`) don't get that, so they must adapt:
+> ⚠️ **The Windows string is not stable, which is the whole argument for omitting `title`.**
+> `ShowInFinderProps` documented `"Show in Explorer"` in v1.104.23 and **`"File Explorer"`**
+> in v2.0.3. Any extension that hand-wrote the v1 wording silently disagrees with Raycast
+> the moment it upgrades. The component tracks the change; a literal never will.
 
-```ts
-title: isMacOS ? "Show in Finder" : "Show in Explorer"
+Hand-written titles (`toast.primaryAction`, a custom `<Action>`) get no such help, so they carry a standing maintenance cost. Prefer routing through `Action.ShowInFinder` where an `ActionPanel` allows it. Where you genuinely must hand-write (a toast action), **read the current default out of the installed types rather than copying a string from this file**:
+
+```bash
+grep -A3 'defaultValue.*Show in Finder' node_modules/@raycast/api/types/index.d.ts
 ```
 
-Not `"Show in Folder"` — Raycast's Windows string is **Explorer**.
+```ts
+// macOS is stable; the Windows half is version-dependent — verify against the line above.
+title: isMacOS ? "Show in Finder" : "File Explorer"   // v2.0.3 wording
+```
+
+Never `"Show in Folder"` — that has never been Raycast's string on either platform.
 
 - **Audit:** `rg -n 'title[=:] *["`].*\b[Rr]eveal'` → any user-facing "Reveal" (not just "in Finder" — it hides in "Reveal Index File" and "Could Not Reveal…"); `rg -A3 '<Action\.ShowInFinder' | rg 'title='` → must return nothing. Internal identifiers (`revealOnComplete`, a `RevealInFinderAction` component) are not user-facing and don't block.
-- **Evidence:** 2026-08-10 fleet audit — 8 user-facing strings across 4 self-authored extensions said "Reveal" or "Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right. Two `raycast-fathom` toasts labelled "Open in Finder" called bare `open(filePath)` — the file opened in its default app and Finder never appeared.
+- **Evidence:** 2026-08-10 fleet audit — 8 user-facing strings across 4 self-authored extensions said "Reveal" or "Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right. Two `raycast-fathom` toasts labelled "Open in Finder" called bare `open(filePath)` — the file opened in its default app and Finder never appeared. **2026-08-20:** v2.0.3 renamed the Windows default from "Show in Explorer" to "File Explorer", invalidating the hand-written wording this rule had recommended ten days earlier — evidence for the omit-`title` form over any literal.
 
 ### `[both]` Empty/error state copy: short title, one-line description, steps in the actions
 

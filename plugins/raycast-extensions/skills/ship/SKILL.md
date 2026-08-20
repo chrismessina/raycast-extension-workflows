@@ -15,6 +15,14 @@ metadata:
 
 `ship` runs *non-breaking* dep hygiene, the *read-only* house-style audit, weeds metadata, gates compliance, submits, and cleans up. The moment a code change is needed (a failing house-style audit, or Store review feedback that needs code), it **hands back to `develop`** with context, then receives the change forward again. The arrow is two-way.
 
+## Documented learnings — read before the review cycle, not after it
+
+`docs/solutions/` in this repo holds learnings written from previous runs of these skills, filed by category with YAML frontmatter (`module`, `component`, `problem_type`, `tags`). Two categories carry ship-relevant material: **`workflow-issues/`** (publishing topology, stale mirrors, diverged PR bases, answering a blocking review) and **`design-patterns/`** (implementation shapes a reviewer will challenge).
+
+Relevant when a Store PR draws review findings, when a submission behaves unexpectedly, or when a claim in this file looks stale. Absolute path: `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/`.
+
+> **On a blocking finding from an automated reviewer:** a finding being correct does not make the remedy it implies correct, and a rating that will not clear creates pressure to ship *any* responsive change. Build the implied remedy, measure it against what you have, and report the number — including when it loses. See `docs/solutions/workflow-issues/answer-a-blocking-review-with-a-measurement.md`.
+
 ## Pre-flight checklist (the "cake")
 
 Run before PR. Each layer is gardening, not engineering:
@@ -253,14 +261,12 @@ Run before PR. Each layer is gardening, not engineering:
    **The re-run is the gate, not a formality.** If any dep changed and you did not re-run
    all three, step 0's result is stale and you cannot claim the build is green.
 
-   **`@raycast/api` must be at the current published version — this blocks submission.**
-   The Store requires the latest API; a floor in `dep-gates.md` is the *migration* safety
-   net, not permission to submit stale. Check against the live registry, never memory:
+   **`@raycast/api` must be current *within its major* — this blocks submission.**
+   The Store expects a current API. But "current" means the newest release on the major
+   line you are already on: **crossing a major is a migration, and migrations belong to
+   `develop`** (gated by `dep-gates.md`), never to a submission run.
 
    ```bash
-   LATEST="$(npm view @raycast/api version 2>/dev/null)"
-   [ -n "$LATEST" ] || { echo "ABORT: could not reach npm — cannot prove the API is current."; exit 1; }
-
    # Locate the lockfile: the extension dir normally, a parent under workspaces.
    LOCK="$(node -e 'const f=require("path");let d=process.cwd();for(;;){const p=f.join(d,"package-lock.json");if(require("fs").existsSync(p)){console.log(p);break}const u=f.dirname(d);if(u===d)process.exit(1);d=u}' 2>/dev/null)"
    [ -n "$LOCK" ] || { echo "ABORT: no package-lock.json found — the Store requires one."; exit 1; }
@@ -272,18 +278,40 @@ Run before PR. Each layer is gardening, not engineering:
      // empty' "$LOCK")"
    [ -n "$INSTALLED" ] || { echo "ABORT: @raycast/api not resolvable in $LOCK (workspace hoisting?)."; exit 1; }
 
-   echo "latest=$LATEST  lockfile=$INSTALLED  ($LOCK)"
-   [ "$INSTALLED" = "$LATEST" ] || {
-     echo "BLOCKED: @raycast/api $INSTALLED != latest $LATEST."
-     echo "Run: npm install @raycast/api@latest   then re-run tsc + build + lint."
+   MAJOR="${INSTALLED%%.*}"
+   # Newest release on the SAME major — this is the blocking target.
+   TARGET="$(npm view "@raycast/api@^$MAJOR" version 2>/dev/null | tail -1 | awk '{print $NF}' | tr -d "'")"
+   [ -n "$TARGET" ] || { echo "ABORT: could not reach npm — cannot prove the API is current."; exit 1; }
+   # Newest overall, for the advisory line only.
+   NEWEST="$(npm view @raycast/api version 2>/dev/null)"
+
+   echo "lockfile=$INSTALLED  latest-in-major=$TARGET  newest-overall=$NEWEST  ($LOCK)"
+
+   [ "$INSTALLED" = "$TARGET" ] || {
+     echo "BLOCKED: @raycast/api $INSTALLED is behind $TARGET on the v$MAJOR line."
+     echo "Run: npm install @raycast/api@$TARGET   then re-run tsc + build + lint."
      exit 1
    }
+
+   # A newer MAJOR is information, not a blocker. Do not bump it here.
+   [ "${NEWEST%%.*}" = "$MAJOR" ] || \
+     echo "NOTE: @raycast/api v${NEWEST%%.*} exists ($NEWEST). That is a migration → hand to \`develop\`, not a ship-time bump."
    ```
 
    **This is a hard compare that exits non-zero — not a printout to eyeball.** Every
    failure path (npm unreachable, no lockfile, unresolvable version) aborts rather than
    passing quietly: an unprovable claim about currency is not a pass. A manifest range
-   that merely *permits* the latest is insufficient; **the lockfile is what ships.**
+   that merely *permits* the target is insufficient; **the lockfile is what ships.**
+
+   > 🚨 **Why this is scoped to the major, added 2026-08-20.** The earlier version compared
+   > against `npm view @raycast/api version` — bare `latest`. The day `2.0.3` took the
+   > `latest` tag, that gate began **blocking every extension in the fleet** (all on
+   > 1.104.x) and demanding an unreviewed major migration inside a submission run — which
+   > `dep-gates.md` explicitly assigns to `develop`. It also would have pushed you ahead of
+   > the entire ecosystem: on 2026-08-20 every extension in `raycast/extensions` was still
+   > on 1.x, and the 1.x line was still shipping (1.104.25). **A gate keyed on `latest`
+   > silently converts someone else's major release into your emergency.**
+
 2. **House-style audit** (read-only — the `npm audit` twin) — assert against `reference/house-style.md` + `reference/keyboard-conventions.md`:
    - Every `Toast.Style.Failure` has a "Copy Error" action. **This is the blocking assertion** —
      hand-rolled or via the kit, either satisfies it.

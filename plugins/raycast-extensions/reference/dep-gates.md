@@ -25,11 +25,17 @@ it never needed. So each dep carries **two** gates.
 **Non-breaking bumps within a tier are `ship`'s dep hygiene. Crossing a major — floor →
 leading edge — is `develop`'s modernization intent, and it is gated on this file.**
 
-> 🚨 **`@raycast/api` is the exception: its FLOOR is not a submission target.** The Store
-> requires the **latest** API, so anything you submit must match `npm view @raycast/api
-> version` in **both** manifest and `package-lock.json` — the lockfile is what ships. The
-> floor below exists so a *migration* knows what is safe fleet-wide; it is never
-> permission to submit stale. `ship` enforces this as a blocking gate.
+> 🚨 **`@raycast/api` is the exception: its FLOOR is not a submission target.** Anything you
+> submit must be the newest release **on the major line it is already on**, in both manifest
+> and `package-lock.json` — the lockfile is what ships. The floor below exists so a
+> *migration* knows what is safe fleet-wide; it is never permission to submit stale.
+> `ship` enforces this as a blocking gate.
+>
+> **Scoped to the major on purpose — do not "simplify" it back to bare `latest`.** On
+> 2026-08-20 `2.0.3` took the `latest` tag, and a gate keyed on `latest` instantly blocked
+> every extension in the fleet and demanded a major migration inside a submission run.
+> Crossing a major is `develop`'s job, gated here. Query the in-major target with
+> `npm view "@raycast/api@^$MAJOR" version | tail -1`.
 >
 > The pinned versions in this table are a **snapshot, not an oracle** — they go stale by
 > definition. Check the registry at submission time; if the table disagrees with `npm
@@ -40,7 +46,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
 |---|---|---|---|
 | `node` | 22 | — | local toolchain is v22.22.3 |
-| `@raycast/api` | `^1.103` | `^1.104` | fleet-wide; 1.104 is the common current |
+| `@raycast/api` | `^1.104` | `^1.104` (latest 1.x) | fleet-wide; **v2 exists but is NOT adopted — see below** |
 | `@raycast/utils` | `^2.2` | — | `^1.17` still in use; see note below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
@@ -54,6 +60,43 @@ The fleet is genuinely split between `^1.17` and `^2.2`, and **v1 extensions are
 stranded** — they're just on the older major. Treat a `^1.17` → `^2.2` move as a real
 migration (v2 changed hook signatures), not a hygiene bump. Don't bulk-migrate; do it
 when the extension is being worked on anyway.
+
+### `@raycast/api` v2 — available, deliberately not adopted (assessed 2026-08-20)
+
+`2.0.3` holds the `latest` tag and is the only 2.x release. **Stay on 1.x for now.** This
+is a hold, not a warning about danger — v2 tested clean; there is simply no reason to be
+first.
+
+What the assessment found, by diffing the shipped `.d.ts` files and building a real
+extension against v2:
+
+- **It is a soft major.** `engines` (node ≥22.22.2) and `peerDependencies`
+  (`@types/node`, `@types/react` 19, `react-devtools`) are **byte-identical** to 1.104.23.
+  No Node or React migration.
+- **Nothing we rely on was removed.** `Keyboard.Shortcut.Common` survives with the same
+  17 members; `showToast`, `secondaryAction`, `showInFinder`, `Action.ShowInFinder`,
+  `LocalStorage`, `Cache`, `updateCommandMetadata`, `environment.launchType` /
+  `LaunchType` are all intact and undeprecated.
+- **The renames are the "command → entry point" shift**, reflecting that an extension now
+  exposes tools as well as commands: `environment.commandName` → `entryPointName`,
+  `environment.commandMode` → `entryPointMode`, plus new `entryPointType: "command" | "tool"`.
+  Old names are **deprecated aliases that still work**. Same for `KeyboardShortcut` →
+  `KeyboardShortcutV1` (canonical `Keyboard.Shortcut` is unchanged) and a batch of
+  `AI.Model.*` constants → `AI.Model["..."]` bracket form.
+- **Verified on a real extension:** `get-app-icon` upgraded to 2.0.3 gave `tsc --noEmit`
+  exit 0, `ray build` exit 0, `ray lint` exit 0, with no source changes.
+
+**Why hold anyway:** on 2026-08-20 every extension in `raycast/extensions` was still on
+1.x, the 1.x line was still shipping (1.104.25), and `developers.raycast.com/migration/v2`
+returned 404 — no published migration guide. Being the only v2 extension in the monorepo
+means any Store-review or CI surprise is yours alone to debug.
+
+**Fleet exposure if we do move:** effectively zero. The only `environment.commandName` use
+is in `change-case`, which is a fork (author `erics118`), and it is a deprecation, not a
+removal. `raycast-reader`'s `commandName` is its own local prop, unrelated to the API.
+
+**Re-assess when** upstream extensions start landing on 2.x, a migration guide appears, or
+1.x stops receiving releases.
 
 ## Stranded extensions (real migration candidates)
 

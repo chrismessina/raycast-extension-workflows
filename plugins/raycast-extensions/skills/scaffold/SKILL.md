@@ -56,9 +56,13 @@ extension, a non-MIT license) is expensive to undo. Catch it here.
 mkdir -p raycast-<name> && cd raycast-<name>
 npm init -y
 # Caret range, matching the ecosystem convention (verified 2026-07-29: every extension
-# in the fleet and upstream uses `^`). `@latest` pins the CURRENT version into the
-# lockfile, which is what the Store actually checks — do NOT use --save-exact.
-npm install @raycast/api@latest
+# in the fleet and upstream uses `^`). Do NOT use --save-exact.
+#
+# Pin the MAJOR, not bare `@latest`. As of 2026-08-20 `latest` is 2.0.3, but the fleet,
+# the dep gate, and every extension in raycast/extensions are still on 1.x — scaffolding
+# a new extension onto v2 would silently make it the only v2 extension in the monorepo.
+# `dep-gates.md` owns this number; check it before changing the range here.
+npm install '@raycast/api@^1'
 npm install --save-dev @raycast/eslint-config eslint prettier typescript @types/node @types/react
 ```
 
