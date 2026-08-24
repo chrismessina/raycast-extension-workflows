@@ -4,8 +4,9 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-07-13, by census of all 34 `chrismessina/raycast-*` working
-  repos (`package.json` `dependencies` + `devDependencies`).
+- **Last verified:** 2026-08-21 for the `@raycast/api` / `@raycast/utils` rows (see the
+  v2 section); 2026-07-13 for the rest, by census of all 34 `chrismessina/raycast-*`
+  working repos (`package.json` `dependencies` + `devDependencies`).
 - **Drift guard:** gates never move silently. If `develop` finds a newer version is the
   real known-good target, it **proposes** the change and asks for confirmation before
   editing this file. Never trust a gate blind past its verified date.
@@ -46,8 +47,8 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
 |---|---|---|---|
 | `node` | 22 | — | local toolchain is v22.22.3 |
-| `@raycast/api` | `^1.104` | `^1.104` (latest 1.x) | fleet-wide; **v2 exists but is NOT adopted — see below** |
-| `@raycast/utils` | `^2.2` | — | `^1.17` still in use; see note below |
+| `@raycast/api` | `^1.104` | `^2.0` | `ios-apps` (2.0.5); floor stays 1.x fleet-wide — see below |
+| `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0); `^1.17` still in use, see note below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -61,14 +62,14 @@ stranded** — they're just on the older major. Treat a `^1.17` → `^2.2` move 
 migration (v2 changed hook signatures), not a hygiene bump. Don't bulk-migrate; do it
 when the extension is being worked on anyway.
 
-### `@raycast/api` v2 — available, deliberately not adopted (assessed 2026-08-20)
+### `@raycast/api` v2 — leading edge, first adopter is `ios-apps` (2026-08-21)
 
-`2.0.3` holds the `latest` tag and is the only 2.x release. **Stay on 1.x for now.** This
-is a hold, not a warning about danger — v2 tested clean; there is simply no reason to be
-first.
+`2.0.5` holds the `latest` tag. **The floor stays `^1.104`; v2 is opt-in.** The 2026-08-20
+assessment below still describes the change accurately — what moved is the hold, not the
+risk assessment.
 
-What the assessment found, by diffing the shipped `.d.ts` files and building a real
-extension against v2:
+What the original assessment found, by diffing the shipped `.d.ts` files and building a
+real extension against v2:
 
 - **It is a soft major.** `engines` (node ≥22.22.2) and `peerDependencies`
   (`@types/node`, `@types/react` 19, `react-devtools`) are **byte-identical** to 1.104.23.
@@ -83,20 +84,26 @@ extension against v2:
   Old names are **deprecated aliases that still work**. Same for `KeyboardShortcut` →
   `KeyboardShortcutV1` (canonical `Keyboard.Shortcut` is unchanged) and a batch of
   `AI.Model.*` constants → `AI.Model["..."]` bracket form.
-- **Verified on a real extension:** `get-app-icon` upgraded to 2.0.3 gave `tsc --noEmit`
-  exit 0, `ray build` exit 0, `ray lint` exit 0, with no source changes.
 
-**Why hold anyway:** on 2026-08-20 every extension in `raycast/extensions` was still on
-1.x, the 1.x line was still shipping (1.104.25), and `developers.raycast.com/migration/v2`
-returned 404 — no published migration guide. Being the only v2 extension in the monorepo
-means any Store-review or CI surprise is yours alone to debug.
+**Why the hold lifted (2026-08-21, one day later).** The 2.x line is now shipping faster
+than 1.x: `2.0.4` and `2.0.5` both landed on 2026-08-21, against `1.104.25` on 2026-08-18.
+That is the "1.x is winding down" signal the hold was waiting for. Note the other two
+re-assess triggers are **still unmet** — `developers.raycast.com/migration/v2` continues
+to 404, and no upstream extension in `raycast/extensions` is on 2.x — so an adopter is
+still the first one there, and any Store-review or CI surprise is theirs to debug. That is
+why the floor did not move with the leading edge.
 
-**Fleet exposure if we do move:** effectively zero. The only `environment.commandName` use
+- **Verified on `ios-apps`, 2026-08-21:** `^2.0.5` with `tsc --noEmit` exit 0, `ray build`
+  exit 0, `ray lint` 0 problems, **zero source changes**. A grep for every deprecated alias
+  (`commandName`, `commandMode`, `KeyboardShortcut`, `AI.Model.`) found no uses, so nothing
+  in that extension depends on the compatibility shims.
+
+**Fleet exposure if others move:** effectively zero. The only `environment.commandName` use
 is in `change-case`, which is a fork (author `erics118`), and it is a deprecation, not a
 removal. `raycast-reader`'s `commandName` is its own local prop, unrelated to the API.
 
-**Re-assess when** upstream extensions start landing on 2.x, a migration guide appears, or
-1.x stops receiving releases.
+**Move the FLOOR to `^2.0` when** a migration guide appears or upstream extensions start
+landing on 2.x.
 
 ## Stranded extensions (real migration candidates)
 
