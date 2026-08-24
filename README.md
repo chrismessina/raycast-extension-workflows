@@ -2,7 +2,7 @@
 
 Chris's Raycast-extension tooling. This repo holds two things:
 
-1. **The `raycast-extensions` Claude Code plugin** — lifecycle-stage skills (`scaffold` / `develop` / `ship`) for building, modernizing, and shipping Raycast extensions. See [Plugin](#plugin) below.
+1. **The `raycast-extensions` Claude Code plugin** — lifecycle-stage skills (`scaffold` / `develop` / `ship` / `review-pr`) for building, modernizing, shipping, and reviewing Raycast extensions. See [Plugin](#plugin) below.
 2. **GitHub Actions sync workflows** — keep standalone extension repos in sync with the upstream [`raycast/extensions`](https://github.com/raycast/extensions) monorepo. See [Sync workflows](#sync-workflows) below.
 
 ---
@@ -16,10 +16,15 @@ A Claude Code plugin (`plugins/raycast-extensions/`) whose skills are keyed to l
 | **`scaffold`** | "create / start a **new** extension" | Ideate (reuses `superpowers:brainstorming` + a Raycast-API overlay) and scaffold net-new. |
 | **`develop`** | "change code", "migrate to ESLint 10 / new Node", "**bring this up to my house style**" | Feature/refactor, gated major dep migrations, and the **house-style audit fix** (retrofit existing code to House Style). Absorbs the former `raycast-extension-modernizer`. |
 | **`ship`** | "submit / publish to the Store", "address review feedback" | Pre-flight (dep hygiene + **house-style audit** + weeding), Store-compliance gate, PR prep, review-feedback cycle, mirror-sync verification, post-merge cleanup. |
+| **`review-pr`** | "review this PR", "run this fork locally", a pasted `raycast/extensions/pull/<N>` URL | Reviewing **someone else's** submission: resolve the contributor's fork and head branch, sparse-fetch only the touched extension, run it locally in Raycast, report findings. |
 
-The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. Shared facts live in `plugins/raycast-extensions/reference/` (`house-style.md`, `keyboard-conventions.md`, and stubs for sparse-checkout discipline, dep gates, PR conventions, Store guidelines, and the extension mirror — which points back at the sync workflows below).
+The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. `review-pr` hands to `develop` the same way when reviewing surfaces a defect in your own extension.
 
-> **Status:** v0.1.0. `develop` + the two House Style references are authored deeply; `scaffold` / `ship` are first-draft stubs. Design spec: [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
+Shared facts live in `plugins/raycast-extensions/reference/`: `house-style.md`, `keyboard-conventions.md`, `dep-gates.md`, `sparse-checkout-discipline.md`, `pr-and-cleanup.md`, `store-guidelines.md`, and `my-extensions-mirror.md` (which points back at the sync workflows below), plus an `eslint-rules/` directory.
+
+> **Status:** v0.5.0 — all four skills are authored and in use; none are stubs. `ship` is the largest (~58 KB), then `develop` (~33 KB), `review-pr` (~18 KB), `scaffold` (~7 KB). The version that matters is the matched pair `plugins/raycast-extensions/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`, both `0.5.0`; the root `package.json` version governs nothing. Original design spec (historical, predates `review-pr`): [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
+>
+> When this block and the files disagree, **the files win** — a stale "ship is a stub" note here once misrouted an agent shipping `claude-artifacts`. See [`CLAUDE.md`](CLAUDE.md).
 
 ### Install (local, for development)
 
