@@ -270,6 +270,15 @@ npm run dev        # or `ray develop` — whichever the repo defines
 > both stayed invisible across several hot-reloads. Chris restarted Raycast and both
 > appeared immediately — and his GitHub token and GraphQL toggle were reset.)*
 >
+> **⚠️ SUPERSEDED 2026-08-24 — do NOT ask which app he is in, and do NOT pre-emptively pass
+> `--target=x`.** Chris: *"`--target=x` is no longer necessary as Raycast v2 is rolling out."*
+> Under v2 the two-app split collapses and a plain `npm run dev` reaches the app he is running.
+> Asking him to pick a target is now noise in the handoff.
+>
+> The table below survives only as a fallback for a machine still on the pre-v2 split, and only
+> once the `Missing executable` symptom has actually appeared. Reach for it to *diagnose*, never
+> to pre-empt.
+>
 > **Chris runs BOTH Raycast apps, and they read different extension directories.** A dev
 > deploy lands in exactly one of them, so the default target is a coin flip against which
 > app he actually has open:
