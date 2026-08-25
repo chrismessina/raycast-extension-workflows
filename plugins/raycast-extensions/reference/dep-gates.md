@@ -4,7 +4,8 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-08-24 for the `@chrismessina/raycast-logger` row (census of the
+- **Last verified:** 2026-08-25 for `@raycast/api` / `@raycast/utils` /
+  `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
   `chrismessina/raycast-*` working repos (`package.json` `dependencies` +
@@ -49,9 +50,9 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
 |---|---|---|---|
 | `node` | 22 | — | local toolchain is v22.22.3 |
-| `@raycast/api` | `^1.104` | `^2.0` | `ios-apps` (2.0.5); floor stays 1.x fleet-wide — see below |
-| `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0); `^1.17` still in use, see note below |
-| `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
+| `@raycast/api` | `^1.104` | `^2.0` | `ios-apps` (2.0.5), `context7` (2.0.5, first upstream — merged 2026-08-25); floor stays 1.x fleet-wide — see below |
+| `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
+| `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0), `context7` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -87,6 +88,30 @@ real extension against v2:
   Old names are **deprecated aliases that still work**. Same for `KeyboardShortcut` →
   `KeyboardShortcutV1` (canonical `Keyboard.Shortcut` is unchanged) and a batch of
   `AI.Model.*` constants → `AI.Model["..."]` bracket form.
+
+**The first 2.x extension in `raycast/extensions` merged clean (2026-08-25).** `context7`
+PR [#30501](https://github.com/raycast/extensions/pull/30501) carried `@raycast/api` 2.0.5
+upstream and was merged by `raycastbot` at 06:54 UTC — CI green, Greptile 5/5, no reviewer
+comment on the major bump. **That retires the "no upstream extension is on 2.x" re-assess
+trigger.** One guide trigger is still unmet: `developers.raycast.com/migration/v2` continues
+to 404, so the migration below remains verified by diffing `.d.ts` files, not by following
+docs.
+
+> 📌 **Floor move proposed, not taken.** One merged extension is one data point, and it is a
+> small API surface — no `Grid`, no `Form`, no `OAuth`, no menu-bar command. Per the drift
+> guard above this file does not move a floor silently: **the `@raycast/api` floor stays
+> `^1.104` until Chris confirms.** The case for moving it is that the blocking trigger is now
+> met and 2.x is shipping faster than 1.x; the case against is that nothing has yet exercised
+> v2's `Form` or OAuth paths in the fleet. Worth noting the first adopter upstream was a fork
+> Chris contributes to rather than one he owns — the risk landed on someone else's extension,
+> which is a thing to weigh deliberately next time, not to repeat by default.
+
+Verified on that migration, against the shipped 2.0.5 `.d.ts`: all 17
+`Keyboard.Shortcut.Common` members unchanged, and `canAccess`, `AI.ask`,
+`Tool.Confirmation`, `launchCommand`, `LocalStorage`, `supportPath` all present with the
+same shapes. `tsc`, `ray build`, and `ray lint` passed with **zero source changes** —
+consistent with the soft-major assessment above. `npx ray migrate` is not usable: it
+spawns `@raycast/migration@latest`, which fails `ENOENT`.
 
 **Why the hold lifted (2026-08-21, one day later).** The 2.x line is now shipping faster
 than 1.x: `2.0.4` and `2.0.5` both landed on 2026-08-21, against `1.104.25` on 2026-08-18.
