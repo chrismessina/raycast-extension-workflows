@@ -4,9 +4,11 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-08-21 for the `@raycast/api` / `@raycast/utils` rows (see the
-  v2 section); 2026-07-13 for the rest, by census of all 34 `chrismessina/raycast-*`
-  working repos (`package.json` `dependencies` + `devDependencies`).
+- **Last verified:** 2026-08-24 for the `@chrismessina/raycast-logger` row (census of the
+  13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
+  `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
+  `chrismessina/raycast-*` working repos (`package.json` `dependencies` +
+  `devDependencies`).
 - **Drift guard:** gates never move silently. If `develop` finds a newer version is the
   real known-good target, it **proposes** the change and asks for confirmation before
   editing this file. Never trust a gate blind past its verified date.
@@ -49,6 +51,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | `node` | 22 | — | local toolchain is v22.22.3 |
 | `@raycast/api` | `^1.104` | `^2.0` | `ios-apps` (2.0.5); floor stays 1.x fleet-wide — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0); `^1.17` still in use, see note below |
+| `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -93,6 +96,14 @@ to 404, and no upstream extension in `raycast/extensions` is on 2.x — so an ad
 still the first one there, and any Store-review or CI surprise is theirs to debug. That is
 why the floor did not move with the leading edge.
 
+> ⛔ **Prerequisite: `@chrismessina/raycast-logger` must be `^1.4.0` first.** Through
+> 1.3.0 the logger declared `peerDependencies: { "@raycast/api": "^1.0.0" }`, which does
+> not match 2.x. Installing them together is a hard `npm error code ERESOLVE`, not a
+> warning — the install fails outright. 1.4.0 widens the range to `^1.0.0 || ^2.0.0`.
+> Verified both directions on 2026-08-24: `logger@1.3.0 + @raycast/api@2.0.5` → ERESOLVE;
+> `logger@1.4.0 + @raycast/api@2.0.5` → clean install. Bump the logger *before* attempting
+> the v2 migration, or the failure will look like a v2 problem when it is not.
+
 - **Verified on `ios-apps`, 2026-08-21:** `^2.0.5` with `tsc --noEmit` exit 0, `ray build`
   exit 0, `ray lint` 0 problems, **zero source changes**. A grep for every deprecated alias
   (`commandName`, `commandMode`, `KeyboardShortcut`, `AI.Model.`) found no uses, so nothing
@@ -104,6 +115,40 @@ removal. `raycast-reader`'s `commandName` is its own local prop, unrelated to th
 
 **Move the FLOOR to `^2.0` when** a migration guide appears or upstream extensions start
 landing on 2.x.
+
+### `@chrismessina/raycast-logger` — floor is `^1.4`, but the fleet bump is deliberately held
+
+First-party, so the gate behaves differently from the third-party rows: there is no
+upstream to wait on, and a fix here reaches extensions only when each one regenerates its
+lockfile. **The manifest range is not what ships — the lockfile is.** An extension pinned
+to `^1.x` still resolves to whatever its lockfile says until someone reinstalls.
+
+**Two reasons the floor is `^1.4` rather than the dominant cluster:**
+
+1. **`@raycast/api` v2 is impossible below it** — hard ERESOLVE, see the callout above.
+2. **1.3.0 was a security release.** It closed a fail-open where `sanitizeArgs` returned
+   the *original unredacted object* whenever serialization threw, a `toJSON()` bypass that
+   moved a credential onto an innocent key, and credentials embedded in URL userinfo and
+   query parameters. 1.4.0 adds v2 support and stops the redaction heuristic masking REST
+   paths, filesystem paths, and Docker image names as base64.
+
+**The bulk rollout is on hold (2026-08-24, Chris's call).** Twelve of the thirteen
+extensions that use the logger sit below the floor; `ios-apps` is the only one at `^1.4`.
+They are *not* being migrated to `^1.4` one at a time, because logger 2.0 —
+the record/transport model — is the next release, and bumping the fleet twice in quick
+succession is churn nobody benefits from. The plan is to move them to 2.0 directly.
+
+**So, when working in an extension that uses the logger:**
+
+- Below `^1.4` and *not* touching `@raycast/api` v2 → **leave it.** The hold is
+  intentional; this is not a stranded extension to rescue. It is not "hygiene" here.
+- Moving to `@raycast/api` v2 → **bump the logger to `^1.4` first.** That is a hard
+  prerequisite, not a preference.
+- Already at `^1.4` → nothing to do.
+
+Revisit this whole row when logger 2.0 ships; it is a major with a new emission path
+(records and transports replacing direct `console` calls), so it will be a genuine
+migration with its own leading-edge tier, not a hygiene bump.
 
 ## Stranded extensions (real migration candidates)
 
