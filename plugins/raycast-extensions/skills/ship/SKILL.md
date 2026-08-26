@@ -339,6 +339,39 @@ Run before PR. Each layer is gardening, not engineering:
    - **Disable the Impeccable design hook first** (`/impeccable hooks off`) so a design false-positive can't masquerade as a house-style violation during this audit — it can't see `@raycast/api` UI (see the *Environment / tooling* rule in `reference/house-style.md`). Confirm `.impeccable/config.json` is gitignored so it never lands in the Store PR.
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
+   - **README structure — self-authored extensions follow [`reference/readme-template.md`](../../reference/readme-template.md).**
+     Centered top-matter (H1, badge row, one-sentence tagline, nav), then Features /
+     Requirements / Quick Start / Usage / Development / Tech Stack. **Report gaps; do not
+     rewrite prose at ship time** — a thin README is a `develop` task, not a submission
+     blocker. Two things *are* assertable here and both are cheap:
+
+     ```bash
+     # a) every nav anchor resolves — lines printed on the LEFT are dead links
+     diff <(grep -oE '\(#[a-z-]+\)' README.md | tr -d '()' | sort -u) \
+          <(grep -E '^## ' README.md | sed 's/^## //' | tr 'A-Z' 'a-z' | tr ' ' '-' | sed 's/^/#/' | sort -u) \
+     | grep '^<' && echo "BROKEN nav links ^^"
+
+     # b) the badge row points at THIS extension, not a copy-paste of another
+     SLUG="$(jq -r .name package.json)"
+     grep -o 'img.shields.io/github/stars/chrismessina/[a-z0-9-]*' README.md
+     grep -o 'raycast.com/chrismessina/[a-z0-9-]*' README.md   # must end in $SLUG
+     ```
+
+     > ⚠️ **The dead-anchor check exists because the template's own source had the bug.**
+     > `nerd-font-picker` links `[Features](#-features)` against a plain `## Features`
+     > heading; all five of its nav links are dead (verified 2026-08-26). The leading dash
+     > is GitHub's slug for an *emoji-prefixed* heading. Copying that top-matter without
+     > copying emoji headings inherits five broken links.
+     >
+     > ⚠️ **Check (b) because the badge row is the most copy-pasted block in the fleet.**
+     > A stars badge still naming the extension you cloned from is wrong on a page users
+     > actually read, and nothing else in the pipeline looks at it.
+
+     **Forks: skip this entirely.** The follow/stars badges are personal identity; putting
+     them on someone else's extension is a defect, not a courtesy.
+   - **`.github/FUNDING.yml` — mirror-only, never a blocker.** It belongs in the standalone
+     mirror and is dropped on publish (a published extension directory has no `.github/` at
+     all). Note its absence from a mirror in the report; never hold a submission for it.
    - **Screenshot count ≤ 6.** The Store hard-caps `metadata/` screenshots at 6; `ray build`/`ray lint` do NOT flag an over-count, but a reviewer will bounce it. `ls metadata/*.png | wc -l` and trim to the 6 most distinct before submitting.
    - **README images go in top-level `media/` — not `metadata/`, and not `assets/`.** Three folders,
      three jobs; mixing them fails the checklist two different ways:
@@ -517,6 +550,10 @@ returned — paste the actual output, don't assert it:
 - [ ] **comments in the diff earn their keep** (step 3) → no comment argues against a design this
       branch replaced, cites a symbol that no longer exists, or hardcodes a local census. Say what
       you deleted; "none needed removing" is a valid answer only if you actually read them.
+- [ ] **README nav anchors** (self-authored only) → the anchor `diff` in step 3 prints nothing on
+      the left. A dead nav link ships to the Store page and stays there until the next PR.
+- [ ] **README badge row** (self-authored only) → the stars/Store badges name THIS extension's
+      slug, not the one it was copy-pasted from.
 - [ ] **README asset folders** → BOTH greps empty. `assets/` is not an acceptable home for README
       images — it ships to every user:
       ```bash
