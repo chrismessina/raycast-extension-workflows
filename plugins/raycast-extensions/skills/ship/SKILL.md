@@ -389,9 +389,16 @@ Run before PR. Each layer is gardening, not engineering:
        docs also say to "remove unused icon assets." Don't trade a visible violation for a payload.
      - **Assert BOTH — the `metadata/` grep alone is not sufficient:**
        ```bash
-       grep -o 'metadata/[^)]*' README.md                    # must be EMPTY
-       grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' README.md   # must be EMPTY (runtime folder)
+       # Match only markdown image/link TARGETS — both must be EMPTY.
+       grep -oE '!?\[[^]]*\]\((\./)?metadata/[^)]*\)' README.md
+       grep -oE '!?\[[^]]*\]\((\./)?assets/[^)]*\.(png|jpg|jpeg|gif)\)' README.md
        ```
+       > ⚠️ **Match the link syntax, not the bare word.** A loose `grep -o 'metadata/[^)]*'`
+       > also hits a `metadata/` line inside a *Project Structure* code block and reports a
+       > compliant README as failing — observed 2026-08-26 on `get-app-icon`, whose
+       > template-shaped README documents its own folders. The stricter form still catches
+       > the real thing (it flags all six embeds in `ios-apps`).
+
        Fix by moving the files to `media/` and re-pointing the embeds, or drop the embeds.
      - (Hit on reddit-search #29703, 2026-07-23 — caught only at PR time, forcing a re-publish. The
        `assets/` half was added 2026-07-25: `get-app-icon`'s pre-flight moved README images out of
@@ -557,8 +564,8 @@ returned — paste the actual output, don't assert it:
 - [ ] **README asset folders** → BOTH greps empty. `assets/` is not an acceptable home for README
       images — it ships to every user:
       ```bash
-      grep -o 'metadata/[^)]*' README.md
-      grep -oE '\(assets/[^)]*\.(png|jpg|jpeg|gif)' README.md
+      grep -oE '!?\[[^]]*\]\((\./)?metadata/[^)]*\)' README.md
+      grep -oE '!?\[[^]]*\]\((\./)?assets/[^)]*\.(png|jpg|jpeg|gif)\)' README.md
       ```
 - [ ] **dimensions** → `metadata/*.png` are 2000 × 1250; the icon is 512 × 512 (`sips -g pixelWidth
       -g pixelHeight`). Neither `ray build` nor `ray lint` checks this.
