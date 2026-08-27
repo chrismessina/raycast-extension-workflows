@@ -4,7 +4,7 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-08-25 for `@raycast/api` / `@raycast/utils` /
+- **Last verified:** 2026-08-27 for the `@raycast/api` leading edge (`^2.1`); 2026-08-25 for `@raycast/utils` /
   `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
@@ -50,9 +50,10 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
 |---|---|---|---|
 | `node` | 22 | — | local toolchain is v22.22.3 |
-| `@raycast/api` | `^1.104` | `^2.0` | `ios-apps` (2.0.5), `context7` (2.0.5, first upstream — merged 2026-08-25); floor stays 1.x fleet-wide — see below |
+| `@raycast/api` | `^1.104` | **`^2.1`** | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0) and `context7` (first upstream, merged 2026-08-25). **Target `^2.1` for anything new or being migrated**; floor stays 1.x because 33 of 41 are still there — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
 | `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0), `context7` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
+| `@chrismessina/raycast-kit` | `^0.1.4` | — | `claude-artifacts` (0.1.4); **required at `^0.1.4` before `@raycast/api` v2** — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -66,11 +67,35 @@ stranded** — they're just on the older major. Treat a `^1.17` → `^2.2` move 
 migration (v2 changed hook signatures), not a hygiene bump. Don't bulk-migrate; do it
 when the extension is being worked on anyway.
 
-### `@raycast/api` v2 — leading edge, first adopter is `ios-apps` (2026-08-21)
+### `@raycast/api` v2 — leading edge is `^2.1` (assessed 2026-08-27)
 
-`2.0.5` holds the `latest` tag. **The floor stays `^1.104`; v2 is opt-in.** The 2026-08-20
-assessment below still describes the change accurately — what moved is the hold, not the
-risk assessment.
+`2.1.0` holds the `latest` tag. **Target `^2.1.0` for every new extension and every
+migration — do not adopt `^2.0`.** The floor stays `^1.104` because 33 of 41 fleet
+extensions are still on 1.x; the floor describes where the fleet *is*, not what to aim at.
+
+**Why `^2.1` and not `^2.0`: 2.1.0 walks back 2.0's two gratuitous breaks.** `Icon` is an
+`enum` again (2.0 split it into `const Icon` + `type Icon`), and the deprecated
+`KeyboardShortcutV1` alias is named `KeyboardShortcut` again — both restored to their
+1.104.25 shapes. It also adds member namespaces on `Toast.Style` and `Alert.ActionStyle`
+(`Toast.Style.Success` et al. usable as types) and 8 more deprecated `AI.Model` aliases.
+`package.json` is byte-identical to 2.0.6; the whole `.d.ts` delta is 80 lines.
+
+**Both personal packages already accept 2.1** — `@chrismessina/raycast-logger@1.4.0` and
+`@chrismessina/raycast-kit@0.1.4` each declare `"@raycast/api": "^1.0.0 || ^2.0.0"`, which
+covers `2.1.0`. Verified 2026-08-27: `api@^2.1` + `logger@1.4.0` + `kit@0.1.4` installs
+clean, no ERESOLVE. No companion bump is needed to move to `^2.1`.
+
+> ⚠️ **`Icon.Quicklink` does not exist in 2.0.3 or 2.0.4** — it was removed there and
+> restored in 2.0.5. Those two versions are the only ones in the whole line missing an
+> icon, which is reason enough never to pin them.
+
+Verified 2026-08-27 on `claude-artifacts` (which uses `icon?: Icon` in type position — the
+case the enum revert could plausibly break): 2.0.6 → 2.1.0 gave `tsc --noEmit` exit 0,
+`ray build` exit 0, `ray lint` exit 0, **zero source changes**. `store-updates` and
+`karakeep` were already on 2.1.0 the day it shipped and both typecheck clean.
+
+The 2026-08-20 assessment below still describes the 1.x → 2.x change accurately — what
+moved is the target, not the risk assessment.
 
 What the original assessment found, by diffing the shipped `.d.ts` files and building a
 real extension against v2:
@@ -97,14 +122,18 @@ trigger.** One guide trigger is still unmet: `developers.raycast.com/migration/v
 to 404, so the migration below remains verified by diffing `.d.ts` files, not by following
 docs.
 
-> 📌 **Floor move proposed, not taken.** One merged extension is one data point, and it is a
-> small API surface — no `Grid`, no `Form`, no `OAuth`, no menu-bar command. Per the drift
-> guard above this file does not move a floor silently: **the `@raycast/api` floor stays
-> `^1.104` until Chris confirms.** The case for moving it is that the blocking trigger is now
-> met and 2.x is shipping faster than 1.x; the case against is that nothing has yet exercised
-> v2's `Form` or OAuth paths in the fleet. Worth noting the first adopter upstream was a fork
-> Chris contributes to rather than one he owns — the risk landed on someone else's extension,
-> which is a thing to weigh deliberately next time, not to repeat by default.
+> 📌 **Resolved 2026-08-27: the leading edge moved to `^2.1`, the floor did not move.** Chris
+> confirmed the target; the floor is a separate question and is left at `^1.104` deliberately.
+> **The floor is descriptive — "the dominant cluster, safe everywhere" — not a target.**
+> Moving it to `^2.1` while 33 of 41 extensions sit on 1.104 would reclassify all 33 as
+> *stranded* by this file's own definition, putting them in the same bucket as `craftdocs`
+> (`^1.47`) and `quick-call` (`^1.80`), which are genuinely three majors behind. That would
+> make the Stranded table lie and manufacture migration pressure nobody asked for.
+>
+> Still true, and worth weighing before a broad migration: nothing in the fleet has exercised
+> v2's `Form` or OAuth paths, and the first upstream adopter was a fork Chris contributes to
+> rather than one he owns — the risk landed on someone else's extension, which is a thing to
+> weigh deliberately next time, not to repeat by default.
 
 Verified on that migration, against the shipped 2.0.5 `.d.ts`: all 17
 `Keyboard.Shortcut.Common` members unchanged, and `canAccess`, `AI.ask`,
@@ -138,8 +167,10 @@ why the floor did not move with the leading edge.
 is in `change-case`, which is a fork (author `erics118`), and it is a deprecation, not a
 removal. `raycast-reader`'s `commandName` is its own local prop, unrelated to the API.
 
-**Move the FLOOR to `^2.0` when** a migration guide appears or upstream extensions start
-landing on 2.x.
+**Move the FLOOR to `^2.1` when** 2.x becomes the dominant cluster in the fleet — i.e. when
+migrating the *remaining* 1.x extensions is the smaller job. Not before: the floor follows
+the fleet, it does not lead it. (Both original triggers are now spent — upstream extensions
+landed on 2.x on 2026-08-25, and `developers.raycast.com/migration/v2` still 404s.)
 
 ### `@chrismessina/raycast-logger` — floor is `^1.4`, but the fleet bump is deliberately held
 
@@ -174,6 +205,46 @@ succession is churn nobody benefits from. The plan is to move them to 2.0 direct
 Revisit this whole row when logger 2.0 ships; it is a major with a new emission path
 (records and transports replacing direct `console` calls), so it will be a genuine
 migration with its own leading-edge tier, not a hygiene bump.
+
+### `@chrismessina/raycast-kit` — the second v2 peer-range prerequisite
+
+> ⚠️ **0.1.4 is committed and pushed but NOT YET ON npm** (2026-08-25 — blocked on npm auth).
+> Until it publishes, `npm install @chrismessina/raycast-kit@^0.1.4` will fail. Check the
+> registry before trusting this row: `npm view @chrismessina/raycast-kit version`.
+
+Same shape as the logger callout above, and it bit for the same reason: through **0.1.3**
+the kit declared `peerDependencies: { "@raycast/api": "^1.0.0" }`, which does not match 2.x.
+0.1.4 widens it to `^1.0.0 || ^2.0.0`. **No code change was needed** — the kit's entire
+`@raycast/api` surface is `Clipboard`, `Toast`, and `showToast`, all unchanged and
+undeprecated in v2. Verified by building and running the suite against both majors: 83/83
+under 1.104.x, 83/83 under 2.0.6.
+
+> 🚨 **It fails DIFFERENTLY from the logger, and the difference matters.** The logger at
+> 1.3.0 produced a hard `ERESOLVE` — the install aborts and you cannot miss it. The kit at
+> 0.1.3 produces only `npm warn ERESOLVE overriding peer dependency`, and **the install
+> succeeds**. The damage shows up one step later: `npm ls` reports the tree
+> `invalid: "^1.0.0" from node_modules/@chrismessina/raycast-kit` and exits `ELSPROBLEMS`,
+> and the lockfile you would ship contains a package declaring itself incompatible with the
+> API version sitting next to it. A green `tsc` / `ray build` / `ray lint` says nothing about
+> this — all three passed on the invalid tree.
+>
+> **So checking for a failed install is not sufficient. Run `npm ls @raycast/api` after any
+> v2 bump** and require a clean exit, not just a successful `npm install`.
+
+**Before migrating any kit-consuming extension to `@raycast/api` v2, bump the kit to
+`^0.1.4` first** — otherwise the failure looks like a v2 problem when it is not. As of
+2026-08-25 **five** extensions depend on the kit, all pinned `^0.1.3`: `claude-artifacts`,
+`fathom`, `fetch`, `get-app-icon`, `store-updates`. Widening a peer range is
+backward-compatible, so none of them are affected by the bump itself. Re-census with:
+
+```bash
+for d in ~/Developer/GitHub/chrismessina/*/; do p="$d/package.json"; [ -f "$p" ] || continue
+  v=$(jq -r '(.dependencies // {})["@chrismessina/raycast-kit"] // empty' "$p")
+  [ -n "$v" ] && echo "${d%/}  $v"; done
+```
+
+Scope that to `.dependencies`, not a bare `grep` for the package name — the kit's own
+`package.json` matches on its `name` field and inflates the count by one.
 
 ## Stranded extensions (real migration candidates)
 
