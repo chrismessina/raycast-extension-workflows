@@ -4,7 +4,7 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-08-27 for the `@raycast/api` leading edge (`^2.1`); 2026-08-25 for `@raycast/utils` /
+- **Last verified:** 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
   `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
@@ -50,7 +50,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
 |---|---|---|---|
 | `node` | 22 | — | local toolchain is v22.22.3 |
-| `@raycast/api` | `^1.104` | **`^2.1`** | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0) and `context7` (first upstream, merged 2026-08-25). **Target `^2.1` for anything new or being migrated**; floor stays 1.x because 33 of 41 are still there — see below |
+| `@raycast/api` | **`^2.1`** | — | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0, first with `Form` + `Grid`) and `context7` (first upstream, merged 2026-08-25). **Floor moved 1.x → `^2.1` on 2026-08-27, Chris confirmed** — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
 | `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0), `context7` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
 | `@chrismessina/raycast-kit` | `^0.1.4` | — | `claude-artifacts` (0.1.4); **required at `^0.1.4` before `@raycast/api` v2** — see below |
@@ -70,8 +70,15 @@ when the extension is being worked on anyway.
 ### `@raycast/api` v2 — leading edge is `^2.1` (assessed 2026-08-27)
 
 `2.1.0` holds the `latest` tag. **Target `^2.1.0` for every new extension and every
-migration — do not adopt `^2.0`.** The floor stays `^1.104` because 33 of 41 fleet
-extensions are still on 1.x; the floor describes where the fleet *is*, not what to aim at.
+migration — do not adopt `^2.0`.**
+
+**The floor moved to `^2.1` on 2026-08-27 (Chris confirmed), and it is deliberately
+aspirational rather than descriptive.** 33 of 41 fleet extensions were still on 1.x when
+it moved, so this is the one row where FLOOR does *not* mean "the dominant cluster" — it
+means "where everything should land as it is next touched." Read it that way before
+treating a 1.x extension as stranded: those 33 are not broken and do not need an urgent
+migration, they are simply below the target. Migrate one when it is being worked on
+anyway, which is what `karakeep` did.
 
 **Why `^2.1` and not `^2.0`: 2.1.0 walks back 2.0's two gratuitous breaks.** `Icon` is an
 `enum` again (2.0 split it into `const Icon` + `type Icon`), and the deprecated

@@ -466,6 +466,89 @@ name, not a shared behavior. `truncate` looked fleet-wide at 79 uses until 40 pr
 `digger` alone. Generic helpers belong in `@raycast/utils`, already imported by 19 of 24
 extensions. Don't grow the kit past rules that would otherwise depend on memory.
 
+### `[build]` An ActionPanel spanning two scopes is split into `ActionPanel.Section`
+
+A flat list of actions does not tell the user **what each one will act on**. In a list
+row's panel, "Remove From Group" and "Add New Tester" sit adjacent and look like peers —
+one destroys the selected tester, the other creates something in the group. Nothing in
+a flat panel distinguishes them, and the destructive one is the one you can't undo.
+
+**The section boundary is scope, not category.** Not "reads vs writes", not "safe vs
+destructive" — *what does this act on?*
+
+1. **First section: the selected item.** Everything that reads, edits, copies, or
+   deletes *this row*. **Title it with the item's own name** (`betaGroup.attributes.name`,
+   the tester's display name, `Build 4`). That title is the whole point: the panel now
+   states its target instead of leaving the user to infer it.
+2. **Following sections: the wider scope.** Actions on the collection or context —
+   "Add New Tester", "Create Group", "Invite Team Member". Usually untitled; title it
+   when there is a second, genuinely different scope (e.g. `Export Compliance` on a
+   build, which is neither the build's identity nor the list's).
+
+```tsx
+<ActionPanel>
+  <ActionPanel.Section title={betaTesterDisplayName(tester)}>
+    {copyAction(tester)}
+    {removeTesterAction(tester)}   {/* destructive lives WITH what it destroys */}
+  </ActionPanel.Section>
+  <ActionPanel.Section>
+    {addNewTesterAction()}
+    {manageBuildsAction()}
+  </ActionPanel.Section>
+</ActionPanel>
+```
+
+**Keep the destructive action inside its item's section.** Quarantining it into a
+"Danger" section at the bottom is the common instinct and it is wrong here: it separates
+the action from the thing it names, which is exactly the association the section titles
+exist to make. Destructiveness is already carried by `Action.Style.Destructive` and the
+confirm dialog.
+
+**Three corollaries, all observed while applying this:**
+
+- **A section title needs a display-name helper, not string concatenation.** Reaching for
+  `firstName + " " + lastName` inline produces a trailing space for anyone with no
+  surname, and you will now render that string in two places (row title *and* section
+  title) where it must agree. Extract one helper; the duplication is what surfaces the
+  bug. *(Public-link TestFlight testers have no surname — every such row had a trailing
+  space.)*
+- **Sectioning changes shortcut adjacency, so re-check the conflict invariant after.**
+  Moving an action into a section is also the moment you notice it had no shortcut at
+  all; adding `Common.New`/`Common.Remove` while sectioning is normal and is exactly when
+  a collision gets introduced. `ray lint` does not check this — read the resolved panel.
+- **Two actions in *different rows'* panels may share a shortcut.** A file with two
+  `Common.Remove` is not a collision if each lives in a separate row's ActionPanel
+  (e.g. "Revoke" on an invitation, "Remove" on a member). Count per resolved panel, not
+  per file, or the audit produces false positives.
+
+**When the rule fires — both conditions, not either.**
+
+1. The panel resolves to **5 or more direct actions**, AND
+2. those actions span **two or more scopes** by the test above.
+
+**A single-scope panel is EXEMPT at any size.** Five actions that all act on the same
+item stay flat — there is no second scope, and inventing one produces an empty or
+artificial section. This is the common false positive; check condition 2 before flagging.
+
+**"Resolved" means what the user actually sees**, for one concrete item, after
+conditionals evaluate. Count accordingly:
+
+- A `{cond && <Action/>}` counts only in the branch where it renders. A panel that is
+  flat-with-4 for most rows and 6 for one state is judged per state.
+- A fragment (`{copyAction(x)}` returning `<>…</>`) counts as the actions inside it, not
+  as one.
+- An `ActionPanel.Submenu` counts as **one** action; its children are its own scope and
+  are not counted at this level.
+
+**Deliberately `[build]`, not `[both]`.** Condition 2 is a judgment call — whether two
+actions share a scope cannot be decided by grep, and an auditor that mechanically flags
+every flat 5-action panel produces false positives on exactly the single-scope panels
+exempted above. `ship` does not assert this; `develop` applies it while writing, and a
+reviewer may raise it. Do not promote it to `[verify]` without a mechanical scope test.
+
+Applies to `List.Item`/`Grid.Item`/`Detail` panels; a `Form`'s single submit action needs
+nothing.
+
 ### `[both]` Keyboard shortcuts: `Common` first, platform-explicit only when cross-platform
 
 Two independent decisions. Don't conflate them. (Full ruleset + conflict invariant + audit-fix contract: see [`keyboard-conventions.md`](./keyboard-conventions.md).)
@@ -473,7 +556,9 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 **Decision 1 — Does a `Keyboard.Shortcut.Common` member match the action's semantics?**
 
 - **Yes → use the `Common` constant.** Always. It is already platform-aware, so it is correct on every platform with no extra work. Never hand-roll a shortcut that `Common` already covers, and never wrap a `Common` constant in a platform-explicit object.
-- **No → a custom shortcut is correct and expected.** The `Common` set is 16 members (`@raycast/api` 1.104.1); it does not cover everything (no "switch mode", "toggle setting", "connect"). Do not force a bad semantic match — a wrong `Common` is worse than an honest custom shortcut.
+- **No → a custom shortcut is correct and expected.** The `Common` set is small and version-dependent (16 members in `@raycast/api` 1.104.1,
+  17 in 2.0.5 — read the installed typing rather than trusting a number written here); it
+  does not cover everything (no "switch mode", "toggle setting", "connect"). Do not force a bad semantic match — a wrong `Common` is worse than an honest custom shortcut.
 
 **Decision 2 — For custom shortcuts only: what does `platforms` in `package.json` say?**
 
@@ -795,6 +880,41 @@ a date before merge. Entries follow `## [<Title>] - {PR_MERGE_DATE}` under a
 - **Audit:** `grep -c '{PR_MERGE_DATE}' CHANGELOG.md` — expect it only on the newest
   unreleased entry, never on an already-shipped one, and never a real date on an
   unmerged entry.
+
+### `[both]` Changelog bullets are tweet-length and ordered by user benefit
+
+The CHANGELOG is read by two audiences who both skim: a Store reviewer deciding what
+changed, and a user deciding whether to care. Neither reads a paragraph.
+
+**Length: ~280 characters per bullet — tweet length.** If a bullet needs more, the
+rationale belongs in the commit message, not here. A bullet that runs long is usually
+carrying three things at once; the fix is to cut the mechanism and keep the outcome.
+
+**Order by user benefit, not by diff size or chronology.** The headline capability
+first, behavior changes to things that already worked next (a returning user needs to
+find those), dependency and security bumps last.
+
+**One bullet per change a user would notice.** A minor improvement does not earn its own
+line — fold it into the bullet for the feature it belongs to, as a trailing clause. A
+CHANGELOG where every touched file gets a bullet reads as a diff, not as release notes.
+
+**Do name behavior changes explicitly.** A default action that moved, an action that
+disappeared from a view, a renamed command — these are the entries that stop a bug
+report from being filed. They go above the dependency bumps, never omitted as noise.
+
+- **Audit:** every `- ` line in the newest entry is ≤ ~280 chars:
+  ```bash
+  awk '/^## \[/{n++} n==1 && /^- /{ if (length($0)-2 > 280) print length($0)-2": "$0 }' CHANGELOG.md
+  ```
+  Expect no output. Treat 280 as a target, not a hard gate — 300 for a bullet that
+  genuinely needs it is fine; 390 is a bullet doing three jobs.
+
+**Evidence:** written 2026-08-27 after the `brew` analytics PR, where the first draft ran
+to nine bullets — one of them 391 characters, another 326 — and spent a full bullet on
+"each package shows when it was installed, and pinned formulae carry a pin icon", a minor
+change that Chris flagged as not warranting its own line. Condensing to seven bullets
+ordered by benefit, with the minor items folded in as clauses, is the shape this rule
+describes.
 
 ---
 
