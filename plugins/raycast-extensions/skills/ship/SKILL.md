@@ -148,7 +148,9 @@ Run before PR. Each layer is gardening, not engineering:
    > than what you submitted and your mirror never learns about it. Verified 2026-07-28 on
    > `get-app-icon`: upstream `metadata/get-app-icon-1.png` is 1,021,474 bytes against
    > 1,619,195 locally — same image, CI-optimized. A name-only gate could never see this:
-   > the filenames match perfectly.
+   > the filenames match perfectly. **The optimization is lossy** — the pixels differ, not
+   > just the encoding — so a hash comparison cannot distinguish it from a replaced
+   > screenshot. See the callout under the triage table below before acting on any verdict.
 
    **PNG triage — never blanket-adopt, and never blanket-keep.** "Adopt the upstream
    copies" is right for a recompression and **destroys a screenshot the user just
@@ -197,6 +199,31 @@ Run before PR. Each layer is gardening, not engineering:
    knows whether that was intentional. In practice it almost always was — the user
    replaced a screenshot. If you genuinely suspect upstream holds a fix you lack, *look at
    both images* before touching either.
+
+   > 🚨 **Raycast CI's optimization is LOSSY, so `RECOMPRESS` almost never fires for it.**
+   > The verdict table above assumes a CI-optimized copy has byte-identical pixels. It does
+   > not. Measured 2026-08-27 on `claude-artifacts`: a submitted 1,646,438-byte screenshot
+   > came back from merge at **1,050,178 bytes with a different normalized hash** — 36%
+   > smaller, genuinely different pixels, visually indistinguishable. Same image, same
+   > labels, palette-reduced.
+   >
+   > **So the script reports `DIFFERENT` — "keep local, never auto-adopt" — in precisely the
+   > case where adopting is correct.** The automated verdict is inverted here, and following
+   > it leaves the mirror permanently out of sync: the file conflicts on every subsequent
+   > run, because both sides have moved from the recorded baseline forever after.
+   >
+   > **`DIFFERENT` means STOP AND LOOK, not KEEP LOCAL.** Open both images and decide which
+   > case you are in — there is no automated way to tell them apart, and both fail badly in
+   > opposite directions:
+   >
+   > | What you see | Case | Action |
+   > | --- | --- | --- |
+   > | Same screen, same labels, upstream smaller | CI optimized *your* submission | **adopt upstream** — it is what ships |
+   > | Different content, labels, or state | the user replaced the shot | **keep local** — adopting reverts their work |
+   >
+   > This is why images must be pulled DOWN from upstream after a merge rather than assumed
+   > to match: the bytes that ship are not the bytes you submitted, and no amount of hashing
+   > will tell you whether that is benign.
 
    Then assert the kept files still meet spec (`2000 × 1250`) — a replaced screenshot is
    the most likely thing in the tree to be the wrong size.
@@ -837,7 +864,7 @@ time, and the naive resolution is wrong for both:**
 | Conflicted file | ❌ Wrong | ✅ Right |
 | --- | --- | --- |
 | `CHANGELOG.md` | `--ours` | **theirs for the history, ours for the new entry** |
-| `metadata/*.png`, `media/*.png` | `--theirs` | **ours** when the user replaced the shot; theirs when it's a recompression (run the PNG triage above) |
+| `metadata/*.png`, `media/*.png` | `--theirs` | **ours** when the user replaced the shot; theirs when it's a CI optimization of a shot you already submitted. Run the PNG triage above — and read its lossy-optimization callout, because the hash says `DIFFERENT` for BOTH cases and cannot separate them. Look at the images. |
 
 **CHANGELOG — never `git checkout --ours`.** Your side holds `{PR_MERGE_DATE}` on entries
 that *already shipped*; their side holds the real dates. Taking ours re-stamps shipped
@@ -1005,6 +1032,19 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
    PNGs and the stamped CHANGELOG date arrive together, because both are produced by CI on
    merge and live only in the monorepo until synced. If step 1 already stamped the date by
    hand, expect the sync to be a no-op on `CHANGELOG.md` and a real change on the images.
+
+   > ⚠️ **If you replaced a screenshot in the release, expect this sync to HALT on it.**
+   > You changed the file and CI re-optimized it, so both sides moved from the recorded
+   > baseline — a genuine both-sides conflict, and a safe sync refuses to pick a winner.
+   > That is correct behavior, not a broken workflow: it files an issue and syncs nothing.
+   >
+   > Resolve it by hand with the PNG triage above, remembering the lossy-optimization
+   > callout: the hash will say `DIFFERENT`, and for a screenshot *you* submitted the right
+   > move is still to **adopt upstream**, because the published bytes are what users see and
+   > keeping the local original re-conflicts on every run forever. Confirm by eye that it is
+   > the same screen first. Then commit the adopted copy, re-run the sync, and close the
+   > issue. *(Verified 2026-08-27 on `claude-artifacts`: run failed on
+   > `metadata/screenshot-1.png`, adopting the published copy made the next run green.)*
 
    Only reconcile manually (FF/rebase) if the workflow is absent on that repo — don't
    rebuild automation that already exists. (Open task: verify this workflow is present,

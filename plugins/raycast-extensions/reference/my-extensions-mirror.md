@@ -213,3 +213,27 @@ git checkout HEAD -- extensions/<name>/assets/ extensions/<name>/metadata/
 ```
 
 Then the PR contains only real code/metadata changes.
+
+### The optimization is LOSSY — which is why images must be pulled back DOWN after a merge
+
+"Raycast-optimized" is not a re-encode of the same pixels. CI **palette-reduces** the image:
+measured 2026-08-27 on `claude-artifacts`, a submitted 1,646,438-byte screenshot came back
+at **1,050,178 bytes with different pixel data** — 36% smaller, visually indistinguishable,
+same screen and same labels.
+
+Three consequences, and they are the whole reason post-merge image sync exists:
+
+1. **The bytes that ship are never the bytes you submitted.** A mirror that does not pull
+   them back is permanently, invisibly divergent from the published extension — and the
+   difference cannot be seen by looking, only by hashing.
+2. **A hash cannot tell you whether that divergence is benign.** "CI optimized my
+   screenshot" and "someone replaced the screenshot" both produce *different pixels*. The
+   only discriminator is opening both images. Any triage script that decides this
+   automatically is wrong in one direction or the other.
+3. **A safe inbound sync will HALT on it after any release where you changed a screenshot** —
+   you moved the file and CI moved it, so both sides differ from the recorded baseline. That
+   is a genuine conflict and refusing to auto-resolve it is correct. Adopt the published
+   copy by hand (after confirming by eye it is the same screen), or the file conflicts on
+   every run forever.
+
+Full triage procedure and verdict table: `ship`'s PNG triage under the staleness gate.
