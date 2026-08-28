@@ -909,17 +909,25 @@ report from being filed. They go above the dependency bumps, never omitted as no
   Expect no output. Treat 280 as a target, not a hard gate — 300 for a bullet that
   genuinely needs it is fine; 390 is a bullet doing three jobs.
 
-> 🚨 **Never run Prettier on `CHANGELOG.md`.** It reformats whitespace inside headings
-> that have **already shipped** — collapsing a double space after the dash, for instance —
-> which edits published history and can make Raycast CI re-stamp that entry with today's
-> merge date. `ray lint` does **not** require the changelog to be Prettier-clean, so there
-> is nothing to gain. Format the new entry by hand.
+> ⚠️ **Be careful running Prettier on `CHANGELOG.md`.** It reformats whitespace inside
+> headings that have **already shipped** — collapsing a double space after the dash, for
+> instance — which puts unrelated churn in a diff that a Store reviewer reads as an edit to
+> published history. `ray lint` does **not** require the changelog to be Prettier-clean, so
+> reformatting it buys nothing.
 >
-> Verified twice in one session (2026-08-27, brew #30598): `npx prettier --write
-> CHANGELOG.md` silently rewrote `## [Bug fix] -  2026-05-21` to a single space on two
-> separate edits, and both times `ray lint` stayed green afterwards — so only the diff
-> against the published file caught it. If you must reformat, diff the headings against
-> the published copy immediately after:
+> **This is cosmetic, not dangerous.** Raycast CI substitutes the literal `{PR_MERGE_DATE}`
+> token and nothing else, so whitespace in an already-dated heading cannot cause a
+> re-stamp — only reverting a dated heading *back to the placeholder* can (see the rule
+> above). An earlier version of this note claimed otherwise; that was asserted, not
+> verified. If Chris says normalize it, normalize it.
+>
+> Observed twice in one session (2026-08-27, brew #30598): `npx prettier --write
+> CHANGELOG.md` rewrote `## [Bug fix] -  2026-05-21` to a single space on two separate
+> edits, and `ray lint` stayed green both times — so only the diff against the published
+> file surfaced it at all. After any reformat, check what moved:
+> ```bash
+> diff <(grep -E '^## \[' "$PUB_DIR/CHANGELOG.md") \
+>      <(grep -E '^## \[' CHANGELOG.md | grep -v '{PR_MERGE_DATE}')
 > ```bash
 > diff <(grep -E '^## \[' "$PUB_DIR/CHANGELOG.md") \
 >      <(grep -E '^## \[' CHANGELOG.md | grep -v '{PR_MERGE_DATE}')
