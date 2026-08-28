@@ -703,6 +703,38 @@ body file already written. Their one paste beats your three timeouts.
 **4. Report, then stop.** Give the user the PR URL, the body as posted, and the explicit
 next step: *read it, then click "Ready for review" yourself.* Do not do it for them.
 
+### If the draft state changed, ASK GITHUB WHO DID IT before saying anything
+
+Chris works solo. When a PR's `draft` flips between two of your reads, **he is the
+overwhelmingly likely actor** — the two of you get ahead of each other, and he marks his
+own submission ready without narrating it. Treat a flip as *the two of us out of sync*
+until GitHub says otherwise, not as something that happened *to* the PR.
+
+**The timeline names the actor. It costs one call, so make it before reporting:**
+
+```bash
+gh api "repos/raycast/extensions/issues/$PR/timeline?per_page=100" \
+  -H "Accept: application/vnd.github+json" \
+  --jq '.[] | select(.event=="ready_for_review" or .event=="convert_to_draft")
+        | {event, actor:.actor.login, at:.created_at}'
+```
+
+- **Actor is Chris** → say nothing alarming. One line at most, and only if it changes what
+  he should do next ("PR is ready-for-review as of 00:51, so this push updates a live PR").
+- **Actor is someone else, or the timeline is empty and you cannot attribute it** → *then*
+  raise it, and say plainly that you could not attribute it.
+
+**Do not infer the actor from timing.** Verified 2026-08-27 on brew #30598: an agent
+observed `draft: false` immediately after its own `npm run publish`, concluded `ray publish`
+had flipped it, and opened its report with a STOP. The timeline showed all three flips were
+Chris's, one of them six minutes *before* the publish. `ray publish` prints "It will be
+reviewed by the Raycast team shortly" on every update regardless of draft state, which is
+what made the wrong inference feel confirmed. It cost a turn and, in Chris's words, was a
+"freak-out" that "isn't warranted when it's just the two of us."
+
+**The `ship` rule that stands is narrower than it looks:** *you* never run `gh pr ready`.
+That is about your own actions. It is not a licence to police his.
+
 ## Submission — pick the topology FIRST
 
 **`author` is NOT the routing key.** It was, and that misroutes every net-new
