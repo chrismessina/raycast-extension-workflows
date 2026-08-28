@@ -909,6 +909,22 @@ report from being filed. They go above the dependency bumps, never omitted as no
   Expect no output. Treat 280 as a target, not a hard gate — 300 for a bullet that
   genuinely needs it is fine; 390 is a bullet doing three jobs.
 
+> 🚨 **Never run Prettier on `CHANGELOG.md`.** It reformats whitespace inside headings
+> that have **already shipped** — collapsing a double space after the dash, for instance —
+> which edits published history and can make Raycast CI re-stamp that entry with today's
+> merge date. `ray lint` does **not** require the changelog to be Prettier-clean, so there
+> is nothing to gain. Format the new entry by hand.
+>
+> Verified twice in one session (2026-08-27, brew #30598): `npx prettier --write
+> CHANGELOG.md` silently rewrote `## [Bug fix] -  2026-05-21` to a single space on two
+> separate edits, and both times `ray lint` stayed green afterwards — so only the diff
+> against the published file caught it. If you must reformat, diff the headings against
+> the published copy immediately after:
+> ```bash
+> diff <(grep -E '^## \[' "$PUB_DIR/CHANGELOG.md") \
+>      <(grep -E '^## \[' CHANGELOG.md | grep -v '{PR_MERGE_DATE}')
+> ```
+
 **Evidence:** written 2026-08-27 after the `brew` analytics PR, where the first draft ran
 to nine bullets — one of them 391 characters, another 326 — and spent a full bullet on
 "each package shows when it was installed, and pinned formulae carry a pin icon", a minor
