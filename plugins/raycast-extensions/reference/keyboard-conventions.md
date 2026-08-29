@@ -119,3 +119,48 @@ When `develop` rewrites shortcuts to `Common`:
 // after
 <Action title="Open" shortcut={Keyboard.Shortcut.Common.Open} onAction={handleOpen} />
 ```
+
+---
+
+## Action ORDER on an update `[verify]` — the append rule and when to refuse it
+
+Greptile enforces a rule on every Store PR: *"New action panel actions should be appended."* It
+has now fired twice on Chris's extensions **with opposite correct answers**, and the comment text
+reads identically both times. Compliance-by-default is wrong half the time, so apply the test.
+
+**The test: did the insertion change the Enter default?** That is the harm the rule protects
+against — a silent change to the action a user gets by pressing Enter on a row they have pressed
+Enter on a hundred times.
+
+| Enter default changed? | Verdict |
+| --- | --- |
+| **Yes** — a new action became the first child | **FIX IT.** Append, and say so in the reply. |
+| **No**, and the shifted actions carry explicit shortcuts | **Keep it**, and reply with the reasoning so the bot learns the exception. |
+
+**Two receipts, same rule, same repo:**
+
+- **Valid, fixed** (2026-08-27, PR #30529): setup actions were inserted at the top of
+  `NotInstalledEmptyView`, making **View Setup Instructions** the Enter default. Genuine defect —
+  order restored, and the reason is now a comment at
+  `/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/src/components/empty-views.tsx:24`.
+- **Declined** (2026-08-28, PR #30626, P2 / non-blocking): `PinAction` was appended to the
+  *primary* section at
+  `/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/src/search-artifacts.tsx:82`.
+  `Action.OpenInBrowser` stayed the first child (`:68`), so Enter was unchanged; the two sections
+  that shifted down a row are all shortcut-addressable (⌘⇧O, ⌘⇧G, ⌘⇧I).
+
+**Why refusing matters — the remedy is not free.** "Appended" taken literally means *last in the
+whole panel*. Any placement other than dead-last shifts something, so full compliance puts a
+per-item action **below** whatever global or diagnostic actions the panel ends with. Trading a
+permanent information-architecture regression for row-position stability on actions that have
+keyboard shortcuts is the wrong trade.
+
+**Appending to the primary SECTION is still appending.** The rule reads as though a panel were one
+flat list. Where the panel is sectioned, an action that operates on the selected item belongs in
+the section with the other per-item actions — nothing inside that section moved, and that is the
+scope the rule should be measured against.
+
+**Reply, don't just ignore.** Greptile's comment ends with *"reply to this and let me know. I'll
+remember it for next time!"* — a reply tunes the rule across the whole fleet, so it stops firing on
+appends-to-the-primary-section. **Posting it is Chris's call, not yours** (same standing rule as
+never running `gh pr ready`): draft the reply, hand it to him.
