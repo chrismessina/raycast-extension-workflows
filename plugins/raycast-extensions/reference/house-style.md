@@ -549,6 +549,28 @@ reviewer may raise it. Do not promote it to `[verify]` without a mechanical scop
 Applies to `List.Item`/`Grid.Item`/`Detail` panels; a `Form`'s single submit action needs
 nothing.
 
+### `[both]` Audit the FIRST action of every ActionPanel state, not just the primary one
+
+Raycast binds Return to whatever action is first in an `ActionPanel`, per rendered state,
+regardless of any explicit `shortcut` on it. So the question is never "did I assign the
+shortcuts correctly" — it is **"for each state this view can render, what does Return do?"**
+
+**Audit:** enumerate every branch that renders a different `ActionPanel` — loaded, empty,
+error, mid-scan, partial results — and for each one name the first action and what Return
+therefore triggers.
+
+- A **destructive or irreversible** action (eject, delete, revoke, overwrite) must never be
+  first in any state. Put a read-only action ahead of it.
+- Every state must render **at least one** action. A state with an empty `ActionPanel` is a
+  dead end the user can only escape with Esc.
+- Adding an action to one state does not audit the others: the branch you did not touch is
+  where the defect lands.
+
+*(Real: `raycast-ejection-seat` audited the shortcut slots in the blockers state and shipped
+correct ones — then in the "No Visible Blockers" state `Eject Volume` was first, so opening a
+clean volume and pressing Return ejected it. The shortcut audit passed; the per-state
+first-action audit did not exist.)*
+
 ### `[both]` Keyboard shortcuts: `Common` first, platform-explicit only when cross-platform
 
 Two independent decisions. Don't conflate them. (Full ruleset + conflict invariant + audit-fix contract: see [`keyboard-conventions.md`](./keyboard-conventions.md).)
