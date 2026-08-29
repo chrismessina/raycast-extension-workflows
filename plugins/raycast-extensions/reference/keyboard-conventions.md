@@ -164,3 +164,7 @@ scope the rule should be measured against.
 remember it for next time!"* — a reply tunes the rule across the whole fleet, so it stops firing on
 appends-to-the-primary-section. **Posting it is Chris's call, not yours** (same standing rule as
 never running `gh pr ready`): draft the reply, hand it to him.
+
+**It works — this is not a theoretical courtesy.** On #30626 the reviewer replied to the posted
+reasoning with *"I reconsidered it against the actual panel structure, and I'm withdrawing the
+concern … No change is needed."* A declined finding left unanswered just re-fires on the next PR.
