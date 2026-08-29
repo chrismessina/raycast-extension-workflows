@@ -137,6 +137,13 @@ The reliable, manual flow for getting local work into the Store:
 
 ## Missing-mirror entry point (the case that threw the first ship)
 
+**A missing mirror on a `chrismessina`-authored extension is not a state to leave
+alone — create it as part of the same session, not "if you want one."** Every
+self-created extension gets a standalone mirror plus its sync workflow; this is the
+default, not an opt-in. See `ship`'s Post-merge cleanup step 0 for the full sequence
+(create repo → adopt CI-touched assets → fix README to the fleet's standard badge
+header → wire `sync-from-upstream.yml`, seeded and verified).
+
 If `gh repo view chrismessina/raycast-<name>` 404s, the standalone repo was never
 created. Before anything else:
 
@@ -147,7 +154,10 @@ gh repo create chrismessina/raycast-<name> --public --source=. --remote=origin \
 ```
 
 This both creates the repo and wires `origin`, fixing the "no remote" state that
-silently disables any future sync. THEN proceed with verify-baseline → fork-sync → PR.
+silently disables any future sync. THEN proceed with verify-baseline → fork-sync → PR
+for a Route B *update*; for a first-time Route A submission, proceed straight to
+wiring the sync workflow per `ship`'s step 0 — there is no fork-sync/PR step needed
+since the mirror has nothing to diverge from yet.
 
 ## What ships (the published file set)
 

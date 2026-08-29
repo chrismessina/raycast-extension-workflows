@@ -325,6 +325,11 @@ Run before PR. Each layer is gardening, not engineering:
      echo "NOTE: @raycast/api v${NEWEST%%.*} exists ($NEWEST). That is a migration → hand to \`develop\`, not a ship-time bump."
    ```
 
+   > ⏱️ **Re-run this check immediately before `publish`, not only at the top of the pre-flight.**
+   > `@raycast/api` ships most days — 2.1.1 and 2.1.2 both landed within hours of each other on
+   > 2026-08-28 — so a currency check that passed when the pre-flight started can be false by the
+   > time the work is finished. It is one `npm view` call; run it again as the last gate.
+
    **This is a hard compare that exits non-zero — not a printout to eyeball.** Every
    failure path (npm unreachable, no lockfile, unresolvable version) aborts rather than
    passing quietly: an unprovable claim about currency is not a pass. A manifest range
@@ -785,12 +790,20 @@ gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[0].name' >/de
 | **No** (net-new, first submission) | anyone, including you | **Route A** — `ray publish`. Always. |
 | Yes | someone else (you contribute) | **Route A** — `ray publish`. |
 | Yes | `chrismessina` **and** a `chrismessina/raycast-<name>` mirror exists | **Route B** — mirror + fork-sync |
-| Yes | `chrismessina`, no mirror | **Route A**, then create the mirror afterward if you want one |
+| Yes | `chrismessina`, no mirror | **Route A** to submit, then **ALWAYS create the mirror immediately after merge** — not optional, see Post-merge step 0 |
 
 **Route A is the default and covers every first submission.** `ray publish` handles a
 brand-new extension end to end: it needs no standalone repo, no git remote, and no
 published baseline. There is nothing Route B adds to a first submission except steps
 that cannot succeed.
+
+**Every self-created extension gets a standalone mirror — this is not a nice-to-have.**
+The instant a `chrismessina`-authored extension merges into `raycast/extensions` for the
+first time, creating `chrismessina/raycast-<name>` and wiring its sync workflow is part
+of shipping it, on the same footing as the CHANGELOG stamp. Don't wait to be asked, and
+don't treat "if you want one" as license to skip it — the entire fleet runs this way, and
+a merged-but-unmirrored extension is an inconsistency to fix, not a valid resting state.
+See Post-merge cleanup step 0 below for the exact sequence.
 
 **Route B is a *post-publication mirror-maintenance* flow, not a submission flow.** It
 exists so a first-party extension you already shipped can be developed in its own repo
@@ -821,6 +834,16 @@ git remote is NOT a blocker here; `ray publish` does not use it.
    this by default; the user reviews prose rather than writing it. **The PR stays a
    draft:** clicking "Ready for review" is the user's step, never yours.
 
+> 🚨 **Anything on disk inside the extension root SHIPS — git ignore rules do not gate it.**
+> `ray publish` copies the extension directory from the filesystem, so `.gitignore` and
+> `.git/info/exclude` hide a file from `git status` (which is all the clean-tree check reads)
+> while the publisher copies it anyway. There is no in-repo hiding place: a file you are not
+> ready to publish must live **outside the extension root**.
+> *(2026-08-28, karakeep: a learning doc deliberately held back was excluded via
+> `.git/info/exclude` to get past the dirty-tree check. It shipped into the PR, had to be deleted
+> from the fork branch by API, and that deletion then blocked the next publish as "edits were made
+> on your PR".)*
+
 **Known failure — stale fork (expected, not a bug).** `ray publish` may stop with:
 
 > `error - getting fork` … *"could not get the latest changes. Head to
@@ -833,6 +856,14 @@ routine and needs the user's browser session — you cannot fix it headlessly. R
 the three steps verbatim (open the fork → **Sync fork** dropdown → **Update
 branch**), then **re-run `npm run publish`** once they confirm. Nothing is wrong with
 the code; don't start debugging the extension.
+
+**Two different messages, two different causes — read which one you got.** *"some contributions
+are available"* means the fork's `main` moved (usually unrelated extensions; often pure noise).
+*"some edits were made on your PR"* means the **PR branch itself** changed — which, if you edited
+that branch by API, is your own commit coming back. In that second case `pull-contributions`
+correctly reports `no new contributions` and starts no merge, because the edit was a deletion of a
+file that does not exist locally either. **That is success, not a loop — re-run `publish`, do not
+run `pull-contributions` again.**
 
 **Known failure — `checking for new contributions` → run `pull-contributions`, then resolve
 the SAME two conflicts every time.** `ray publish` stops with:
@@ -1006,6 +1037,79 @@ Full topology, the "what ships" allow-list, and the assets-bloat gotcha:
 > commit whose message claims a fix its code lacks.
 
 ## Post-merge cleanup
+
+**Step 0 — for a `chrismessina`-authored extension, confirm the standalone mirror
+exists. If it doesn't, create it now — this is not conditional on being asked.**
+
+```bash
+EXT="$(jq -r .name package.json)"
+gh repo view "chrismessina/raycast-$EXT" >/dev/null 2>&1 && echo "mirror exists" || echo "MISSING — create it"
+```
+
+If missing, do the whole sequence in one pass — the mirror without the sync workflow is
+half a job, since the mirror will silently drift the first time CI recompresses a
+screenshot or a contributor's fix lands upstream:
+
+a. **Create and push the repo** from the local working copy:
+   ```bash
+   gh repo create "chrismessina/raycast-$EXT" --public --source=. --remote=origin \
+     --description="<the one-line extension description>" --push
+   ```
+b. **Adopt anything CI touched on merge** (recompressed PNGs, the stamped
+   `{PR_MERGE_DATE}`) before or right after pushing — see steps 1–2 below; do this
+   first so the mirror's initial push is already correct rather than needing an
+   immediate follow-up commit.
+c. **Fix the README to this fleet's standard header**, not whatever reference you were
+   shown mid-session — a Follow/Stars/Raycast-Store badge block under the H1 (see any
+   recent mirror, e.g. `raycast-claude-artifacts` or `raycast-bookface`, for the exact
+   markup). A different author's README style is not this fleet's convention even if it
+   looked good in the moment.
+d. **Add the `sync-from-upstream.yml` workflow** — copy the reference implementation
+   from `/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/.github/workflows/sync-from-upstream.yml`
+   and its companion `.github/mirror-sync.md`, then:
+   - Set a **cron minute unused by the rest of the fleet** — check what's already taken:
+     ```bash
+     for d in /Users/messina/Developer/GitHub/chrismessina/raycast-*/.github/workflows/sync-from-upstream.yml; do
+       [ -f "$d" ] && grep -oE '"[0-9]+ 9 \* \* \*"' "$d"
+     done | sort -u
+     ```
+   - **Seed `.github/upstream-sync-state.json`** from the current upstream tree (see the
+     "Porting checklist" in `reference/my-extensions-mirror.md`) — a first run with no
+     baseline is safe (it keeps every differing local file) but a *wrong* baseline is not,
+     so seed it from a real fetch, don't hand-write it.
+   - **Validate the YAML** (`npx js-yaml <file>`) before pushing.
+   - **Dispatch it once** (`gh workflow run sync-from-upstream.yml`) and confirm the run
+     succeeds and classifies files as expected — especially that a deliberately
+     customized README lands in "kept (local-only edits)", not "take-upstream". Don't
+     ship the workflow unverified.
+
+Only steps 1–4 are the mirror-creation path. Once the mirror exists (either just now, or
+already), continue with the recurring steps below every merge.
+
+**Then — read all four states in one look, then push the mirror.** The recurring source of
+variability in this flow is that state lives in four places and no single step shows them
+together, so "is it synced?" has four different answers and the wrong one gets acted on.
+
+```bash
+cd "$(git rev-parse --show-toplevel)"; EXT="$(jq -r .name package.json)"; git fetch -q origin
+echo "local      $(git rev-parse --short HEAD)"
+echo "mirror     $(git rev-parse --short origin/main)   (ahead $(git rev-list --count origin/main..HEAD), behind $(git rev-list --count HEAD..origin/main))"
+echo "fork       $(gh api repos/chrismessina/extensions/commits/main --jq '.sha[0:7]')"
+echo "upstream   $(gh api repos/raycast/extensions/commits/main --jq '.sha[0:7]')"
+```
+
+**"Synced the fork" is not "synced the mirror".** `chrismessina/extensions` (the monorepo fork,
+which `ray publish` pushes through) and `chrismessina/raycast-<ext>` (the standalone mirror, which
+the sync workflow reads) are different repos with similar names. Confirm which one moved before
+believing a sync is unnecessary.
+
+> 🚨 **Push the mirror BEFORE dispatching the sync — the workflow runs against `origin/main`, not
+> your local tree.** With local ahead, the workflow compares upstream against a stale mirror,
+> classifies everything you just merged as `take-upstream`, and opens a PR re-importing changes
+> that already exist in your unpushed commits — which then collides with pushing them. Push first
+> and the same run comes back `take-upstream=0 keep-local=0 conflicts=0`.
+> *(2026-08-29, karakeep: local was 15 commits ahead of the mirror at merge time; dispatching first
+> would have proposed re-importing ~30 files.)*
 
 Once the Store PR is **merged**, the same handful of steps run every time. They're written out here so the agent executes them directly instead of re-deriving the discovery each merge (which burns tokens on a solved problem). Run in order; each is skippable when it doesn't apply.
 
