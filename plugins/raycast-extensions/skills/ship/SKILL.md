@@ -412,6 +412,20 @@ Run before PR. Each layer is gardening, not engineering:
    - **`.github/FUNDING.yml` — mirror-only, never a blocker.** It belongs in the standalone
      mirror and is dropped on publish (a published extension directory has no `.github/` at
      all). Note its absence from a mirror in the report; never hold a submission for it.
+   - 🚨 **A `LICENSE` file is MANDATORY on every self-authored extension — MIT, and it must
+     exist as a file.** `package.json` `"license": "MIT"` is only a declaration; the README's
+     Licence badge is a **relative link to `LICENSE`**, so without the file it is a live 404
+     on both GitHub and the Store page. Nothing in `ray build` or `ray lint` checks this.
+     ```bash
+     [ -f LICENSE ] || echo "BLOCKED: no LICENSE file (MIT required on self-authored extensions)"
+     grep -q '](LICENSE)' README.md && [ ! -f LICENSE ] && echo "BLOCKED: Licence badge links to a file that does not exist"
+     ```
+     Add the standard MIT text with `Copyright (c) <year> Chris Messina`. It ships to the
+     monorepo (verified: `extensions/digger`, `extensions/reader-mode`), which is what makes
+     the badge resolve for Store visitors. **Fork caveat:** do not add or change a `LICENSE`
+     on an extension you don't own — that is the owner's call.
+     **Fleet debt (2026-08-29):** `raycast-ios-apps` and `raycast-get-app-icon` carry the
+     badge with no `LICENSE` file. Fix on next touch; never propagate.
    - **Screenshot count ≤ 6.** The Store hard-caps `metadata/` screenshots at 6; `ray build`/`ray lint` do NOT flag an over-count, but a reviewer will bounce it. `ls metadata/*.png | wc -l` and trim to the 6 most distinct before submitting.
    - **README images go in top-level `media/` — not `metadata/`, and not `assets/`.** Three folders,
      three jobs; mixing them fails the checklist two different ways:
@@ -608,11 +622,19 @@ returned — paste the actual output, don't assert it:
       the left. A dead nav link ships to the Store page and stays there until the next PR.
 - [ ] **README badge row** (self-authored only) → the stars/Store badges name THIS extension's
       slug, not the one it was copy-pasted from.
-- [ ] **README asset folders** → BOTH greps empty. `assets/` is not an acceptable home for README
-      images — it ships to every user:
+- [ ] **README asset folders** → ALL THREE greps empty. `assets/` is not an acceptable home for
+      README images — it ships to every user. The third catches the HTML form the markdown
+      patterns cannot see, which the current template makes the normal case:
       ```bash
       grep -oE '!?\[[^]]*\]\((\./)?metadata/[^)]*\)' README.md
       grep -oE '!?\[[^]]*\]\((\./)?assets/[^)]*\.(png|jpg|jpeg|gif)\)' README.md
+      grep -oE 'src="(\./)?(assets|metadata)/[^"]*"' README.md
+      ```
+- [ ] **`LICENSE` file exists** (self-authored only — never add one to a fork). MIT. Required
+      whether or not the README carries the Licence badge; if it does, the badge is a relative
+      link and 404s without the file:
+      ```bash
+      [ -f LICENSE ] || echo "BLOCKED: no LICENSE file"
       ```
 - [ ] **dimensions** → `metadata/*.png` are 2000 × 1250; the icon is 512 × 512 (`sips -g pixelWidth
       -g pixelHeight`). Neither `ray build` nor `ray lint` checks this.
@@ -1079,7 +1101,9 @@ c. **Bring the README onto [`reference/readme-template.md`](../../reference/read
    mirror you happen to have open, or from a nice-looking README you were shown
    mid-session. Most of the fleet predates the template, so "matching an existing mirror"
    reproduces the retired three-badge form. Includes copying the icon into `media/` for the
-   128px header embed, per the template's icon rule.
+   128px header embed, per the template's icon rule. **Add the MIT `LICENSE` file** if it is
+   missing — the template's Licence badge links to it, and it is mandatory regardless (see
+   the pre-flight rule above).
 d. **Add the `sync-from-upstream.yml` workflow** — copy the reference implementation
    from `/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/.github/workflows/sync-from-upstream.yml`
    and its companion `.github/mirror-sync.md`, then:

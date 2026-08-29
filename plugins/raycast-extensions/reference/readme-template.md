@@ -136,6 +136,34 @@ MIT © [Chris Messina](https://github.com/chrismessina)
 
 ## Rules that are not obvious from the shape
 
+### Markdown everywhere it works; HTML only for centering and sizing
+
+Prefer markdown. The two places it genuinely cannot do the job are **centering** and
+**image dimensions** — and both are confined to the header block.
+
+**GitHub Flavored Markdown has no image-sizing syntax.** `![alt](img.png =128x128)` and
+`{width=128}` are other flavors (Pandoc, GitLab, Typora); GitHub renders them as literal
+text or ignores them. Verified against GitHub's own "Basic writing and formatting syntax"
+docs, 2026-08-29: images are covered, sizing is not mentioned at all. So an `<img>` tag is
+the only way to show a 512px icon at 128px.
+
+| Where | Syntax | Why |
+| --- | --- | --- |
+| Header icon | `<img src="media/<icon>" width="128">` | needs sizing, and already sits inside the centered `<div>` |
+| Header badges | markdown `[![…](…)](…)` | no sizing needed; shields.io serves them at final size |
+| Body screenshots | markdown `![alt](media/<shot>.png)` | displayed at natural width — nothing to size |
+
+**The header `<img>` costs no extra HTML.** `<div align="center">` is required for the
+block regardless, so the icon tag lives inside HTML that already exists. Markdown *does*
+render inside that div (blank-line separated), which is why the title, badges, and tagline
+stay markdown — only the one tag that needs a `width` is HTML.
+
+> **Don't "fix" this by shrinking the file to 128px and switching to markdown.** It works,
+> but GitHub renders at natural size, so a 128px source displays 1× — visibly soft on the
+> retina displays nearly everyone reads GitHub on. Pointing `width="128"` at the 512px
+> original gives 4× density for free. The HTML tag is buying image quality, not just
+> convenience.
+
 ### The icon is embedded from `media/` — a COPY, never a reference into `assets/`
 
 The header shows the extension icon at **128px** above the title (the
