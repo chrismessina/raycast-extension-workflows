@@ -141,8 +141,9 @@ The reliable, manual flow for getting local work into the Store:
 alone — create it as part of the same session, not "if you want one."** Every
 self-created extension gets a standalone mirror plus its sync workflow; this is the
 default, not an opt-in. See `ship`'s Post-merge cleanup step 0 for the full sequence
-(create repo → adopt CI-touched assets → fix README to the fleet's standard badge
-header → wire `sync-from-upstream.yml`, seeded and verified).
+(create repo → adopt CI-touched assets → bring the README onto
+[`readme-template.md`](./readme-template.md), icon copied into `media/` → wire
+`sync-from-upstream.yml`, seeded and verified).
 
 If `gh repo view chrismessina/raycast-<name>` 404s, the standalone repo was never
 created. Before anything else:
@@ -224,26 +225,35 @@ git checkout HEAD -- extensions/<name>/assets/ extensions/<name>/metadata/
 
 Then the PR contains only real code/metadata changes.
 
-### The optimization is LOSSY — which is why images must be pulled back DOWN after a merge
+### The re-encode changes the BYTES, not the pixels — which is why images must be pulled back DOWN after a merge
 
-"Raycast-optimized" is not a re-encode of the same pixels. CI **palette-reduces** the image:
-measured 2026-08-27 on `claude-artifacts`, a submitted 1,646,438-byte screenshot came back
-at **1,050,178 bytes with different pixel data** — 36% smaller, visually indistinguishable,
-same screen and same labels.
+> **Corrected 2026-08-29.** This section previously said the optimization was lossy and
+> palette-reducing. It is neither. The error came from testing with `sips -s format png` +
+> `shasum`, which preserves channel count and therefore compares an RGBA re-encode against an
+> RGB one — a difference that says nothing about pixels.
+
+"Raycast-optimized" is a **lossless** re-encode: CI strips a fully-opaque alpha channel and
+recompresses. Measured on `claude-artifacts` across both releases that changed a screenshot
+(#30529 and #30626): `RGBA -> RGB`, the submitted alpha plane holds the single value `255`,
+neither copy is palettized, and **all 7,500,000 RGB bytes are identical**. The 36–37% saving is
+the dropped channel plus better zlib. Not one pixel changes.
 
 Three consequences, and they are the whole reason post-merge image sync exists:
 
-1. **The bytes that ship are never the bytes you submitted.** A mirror that does not pull
-   them back is permanently, invisibly divergent from the published extension — and the
-   difference cannot be seen by looking, only by hashing.
-2. **A hash cannot tell you whether that divergence is benign.** "CI optimized my
-   screenshot" and "someone replaced the screenshot" both produce *different pixels*. The
-   only discriminator is opening both images. Any triage script that decides this
-   automatically is wrong in one direction or the other.
-3. **A safe inbound sync will HALT on it after any release where you changed a screenshot** —
-   you moved the file and CI moved it, so both sides differ from the recorded baseline. That
-   is a genuine conflict and refusing to auto-resolve it is correct. Adopt the published
-   copy by hand (after confirming by eye it is the same screen), or the file conflicts on
-   every run forever.
+1. **The bytes that ship are never the bytes you submitted.** A mirror that does not pull them
+   back is permanently divergent from the published extension. The divergence is invisible to
+   the eye *and* to a pixel comparison — it lives in the encoding, so only a file hash sees it.
+2. **A file hash cannot tell you whether that divergence is benign — a decoded comparison can.**
+   "CI re-encoded my screenshot" and "someone replaced the screenshot" both change the bytes, so
+   a hash reports the same verdict for each. Decode both and compare the RGB planes and the two
+   separate cleanly: pixels equal means CI re-encoded yours, pixels differ means the image
+   genuinely changed. A triage script *can* decide this correctly — it just must not do it by
+   hashing files.
+3. **A safe inbound sync halts on it only if you dispatch before adopting.** Adopt the published
+   copy first and the sync short-circuits on byte-equality before it ever consults the recorded
+   baseline, so there is nothing to conflict over. Dispatch first and both sides have moved from
+   the baseline, which is a genuine conflict a safe sync must refuse.
 
-Full triage procedure and verdict table: `ship`'s PNG triage under the staleness gate.
+Full triage procedure and verdict table: `ship`'s PNG triage under the staleness gate. The
+baseline trap that a clean post-adoption run hides:
+`/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/workflow-issues/a-green-mirror-sync-does-not-mean-a-fresh-baseline.md`

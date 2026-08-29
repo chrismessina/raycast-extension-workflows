@@ -23,6 +23,8 @@ mirror, normally `raycast-<slug>`.
 ````markdown
 <div align="center">
 
+<img src="media/<icon-filename>" width="128" alt="<Extension Title>">
+
 # <Extension Title>
 
 [![Raycast Store](https://img.shields.io/badge/Raycast-Store-FF6363?style=flat-square&logo=raycast&logoColor=white)](https://www.raycast.com/chrismessina/<slug>)
@@ -90,7 +92,8 @@ mirror, normally `raycast-<slug>`.
 <repo>/
 ├── src/
 │   └── <command>.tsx    # <role>
-├── assets/              # Extension icon
+├── assets/              # Extension icon (runtime)
+├── media/               # README images
 ├── package.json
 └── tsconfig.json
 ```
@@ -133,6 +136,47 @@ MIT © [Chris Messina](https://github.com/chrismessina)
 
 ## Rules that are not obvious from the shape
 
+### The icon is embedded from `media/` — a COPY, never a reference into `assets/`
+
+The header shows the extension icon at **128px** above the title (the
+[`filezilla`](https://github.com/raycast/extensions/tree/main/extensions/filezilla) shape).
+Copy it in; the filename is whatever `package.json` `icon` says, which varies per extension:
+
+```bash
+ICON="$(jq -r .icon package.json)"          # e.g. extension-icon.png — do NOT hardcode
+mkdir -p media && cp "assets/$ICON" "media/$ICON"
+```
+
+**Why a copy, when `assets/<icon>` already ships?** Because `ship`'s pre-flight asserts the
+README references neither `metadata/` nor `assets/`:
+
+```bash
+grep -o 'metadata/[^)"]*' README.md                        # must be empty
+grep -oE '\(assets/[^)"]*\.(png|jpg|jpeg|gif)' README.md   # must be empty
+```
+
+`assets/` is the **runtime** folder — everything in it is downloaded by every user — so the
+rule exists to stop a 1.6 MB README screenshot riding along in the bundle. The icon is an
+honest edge case (it is already in `assets/` for runtime reasons, so pointing at it would
+cost nothing), but carving out an exception per-file is how the rule erodes. One
+destination for every README image is the cheaper rule to keep. The duplicated icon is a
+few hundred KB in the repo and is **not** in the runtime bundle.
+
+**Every image the README body embeds goes in `media/` too** — screenshots, diagrams, GIFs.
+Not `metadata/` (Store-listing screenshots only, and embedding from it fails the submission
+checklist verbatim) and not `assets/`.
+
+**`media/` does ship to the monorepo, so Store-page embeds resolve.** Verified 2026-08-29:
+`extensions/get-app-icon/` upstream contains a `media/` directory. This matters — a README
+image that only exists in the mirror renders as a broken image on the Store page, and
+nothing in `ray build`/`ray lint` catches it.
+
+| Folder | Holds | Ships to monorepo | In the runtime bundle |
+| --- | --- | --- | --- |
+| `assets/` | runtime files the extension loads (the icon, images used in code) | yes | **yes** |
+| `metadata/` | Store-listing screenshots only | yes | no |
+| `media/` | README / docs images | yes | no |
+
 ### Nav anchors are plain — do NOT copy the source's `#-feature` form
 
 `nerd-font-picker` links `[Features](#-features)` against a plain `## Features` heading.
@@ -150,6 +194,43 @@ diff <(grep -oE '\(#[a-z-]+\)' README.md | tr -d '()' | sort -u) \
 ```
 
 Lines only on the left are broken links.
+
+### `<slug>` and `<repo>` are different strings — the badge URLs 404 if you swap them
+
+- `<repo>` (stars badge, ×2) = the **full** standalone mirror repo name, e.g.
+  `raycast-reader`. The `raycast-` prefix is part of `<repo>`, not the template — don't
+  double it.
+- `<slug>` (Store badge) = `package.json` **`name`**, which is the Store slug — *not* the
+  repo name. Canonical mismatch: repo `raycast-reader` has `name: "reader-mode"`, so the
+  badge URL is `raycast.com/chrismessina/reader-mode`; using `raycast-reader` there 404s.
+
+(When `name` also differs from the *monorepo directory*, the sync layer's
+`UPSTREAM_EXT_DIR` handles that separate mapping — the badge only ever cares about `name`.)
+
+**The Store badge implies publication.** It deep-links to `raycast.com/chrismessina/<slug>`,
+which 404s until the extension is actually in the Store. Add the badge block **at publish
+time**, not at scaffold time — and when auditing, check the URL resolves rather than only
+that the block exists. (`central-icon-system` carried the badge while its Store URL 404'd —
+the reason for this rule.)
+
+### The Licence badge links to a `LICENSE` file — which must actually exist
+
+`[![Licence MIT](…)](LICENSE)` is a relative link. With no `LICENSE` file in the repo it is
+a 404 on both GitHub and the Store page, and nothing in `ray build`/`ray lint` checks it.
+
+**Known fleet debt (2026-08-29):** `raycast-ios-apps` and `raycast-get-app-icon` — the two
+extensions this template was drawn from — both carry the badge with **no `LICENSE` file**.
+`raycast-digger` and `raycast-reader` do it correctly. Fix on next touch; don't propagate.
+
+Assert it whenever the badge is present:
+
+```bash
+grep -q '](LICENSE)' README.md && { [ -f LICENSE ] || echo "BROKEN: Licence badge, no LICENSE file"; }
+```
+
+`package.json` `"license": "MIT"` is a *declaration*; the file is what makes the badge
+resolve. `LICENSE` ships to the monorepo (verified: `extensions/digger`,
+`extensions/reader-mode`), so adding it is safe.
 
 ### Badge order is deliberate
 

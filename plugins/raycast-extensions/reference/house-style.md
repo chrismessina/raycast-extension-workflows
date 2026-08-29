@@ -834,14 +834,16 @@ it on forks you contribute upstream.)
 
 Two artifacts:
 
-1. **`README.md`** starts with the title, then the centered badge block
-   (Follow / Stars / Raycast Store), then the one-line tagline — adapted per extension.
+1. **`README.md`** follows [`readme-template.md`](./readme-template.md) — **that file is
+   the single source of truth for the shape.** Do not reproduce the markup here, and do not
+   infer the shape from an existing mirror: most of the fleet predates the current template
+   and copying one propagates the old form.
 2. **`.github/FUNDING.yml`** — every self-authored mirror carries it. All existing copies
    are byte-identical, so this is a straight copy from any repo that has one; there is
    nothing per-extension to edit.
 
-> **The badge implies publication.** The third badge deep-links to
-> `raycast.com/chrismessina/<store-slug>`, which 404s until the extension is actually in
+> **The badge implies publication.** The Store badge deep-links to
+> `raycast.com/chrismessina/<slug>`, which 404s until the extension is actually in
 > the Store. Add the block **at publish time**, not at scaffold time — and when auditing,
 > check the Store URL resolves rather than only that the block exists. `FUNDING.yml` has no
 > such constraint; it is safe from day one.
@@ -853,38 +855,21 @@ Two artifacts:
   3 have the badge but no `FUNDING.yml`, 5 have neither. `central-icon-system` carries the
   badge while its Store URL 404s — a live dead link, and the reason for the publish-time rule.
 
-```markdown
-# <Extension Name>
+> 🚨 **The old three-badge form — `# Title` *above* a `<div>` of Follow/Stars/Store — is
+> RETIRED.** It shipped across much of the fleet and is still visible in older mirrors
+> (`raycast-bookface`, `raycast-claude-artifacts`), which makes it easy to "match the
+> fleet" and reproduce the wrong thing. The current shape puts the icon and title *inside*
+> the centered block and carries four badges. Backfill old mirrors on their next
+> substantive touch; never copy from them.
 
-<div align="center">
-  <a href="https://github.com/chrismessina">
-    <img src="https://img.shields.io/github/followers/chrismessina?label=Follow%20chrismessina&style=social" alt="Follow @chrismessina">
-  </a>
-  <a href="https://github.com/chrismessina/<repo>/stargazers">
-    <img src="https://img.shields.io/github/stars/chrismessina/<repo>?style=social" alt="Stars">
-  </a>
-  <a href="https://www.raycast.com/chrismessina/<store-slug>">
-    <img src="https://img.shields.io/badge/Raycast-Store-red.svg" alt="<Extension Name> on Raycast store.">
-  </a>
-</div>
+The substitution traps (`<repo>` vs `<slug>`), the icon/`media/` rule, and the nav-anchor
+rule all live in [`readme-template.md`](./readme-template.md).
 
-<one-line tagline>
-```
-
-**Two substitutions, and the second is a trap:**
-- `<repo>` (stars badge, ×2) = the **full** standalone repo name, e.g. `raycast-reader`
-  (the `raycast-` prefix is part of `<repo>`, not the template — don't double it).
-- `<store-slug>` (Store badge) = the extension's **`package.json` `name`**, which is
-  the Store slug — **not** the repo name. Canonical mismatch: repo `raycast-reader`
-  has `name: "reader-mode"`, so the badge URL is
-  `raycast.com/chrismessina/reader-mode`. Using `raycast-reader` there 404s. (The
-  slug is always `package.json` `name`; when that also differs from the *monorepo
-  directory*, the sync layer's `UPSTREAM_EXT_DIR` handles that separate mapping — but
-  the badge only ever cares about `name`.)
-
-- **Reference:** `chrismessina/raycast-reader`'s README.
-- **Audit:** self-authored repo whose `README.md` lacks the `<div align="center">`
-  badge block, or whose Store badge URL doesn't resolve to a live Store page.
+- **Reference:** [`readme-template.md`](./readme-template.md); a current example is
+  `chrismessina/raycast-ios-apps`.
+- **Audit:** self-authored repo whose `README.md` lacks the centered block, embeds an image
+  from `assets/` or `metadata/`, or whose Store badge URL doesn't resolve to a live Store
+  page.
 
 ---
 

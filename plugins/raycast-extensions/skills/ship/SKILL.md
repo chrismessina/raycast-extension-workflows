@@ -148,9 +148,9 @@ Run before PR. Each layer is gardening, not engineering:
    > than what you submitted and your mirror never learns about it. Verified 2026-07-28 on
    > `get-app-icon`: upstream `metadata/get-app-icon-1.png` is 1,021,474 bytes against
    > 1,619,195 locally — same image, CI-optimized. A name-only gate could never see this:
-   > the filenames match perfectly. **The optimization is lossy** — the pixels differ, not
-   > just the encoding — so a hash comparison cannot distinguish it from a replaced
-   > screenshot. See the callout under the triage table below before acting on any verdict.
+   > the filenames match perfectly. **The re-encode is lossless, but the BYTES still differ**,
+   > so a plain file hash cannot tell it apart from a replaced screenshot — only a
+   > decoded-pixel comparison can. See the callout under the triage table below.
 
    **PNG triage — never blanket-adopt, and never blanket-keep.** "Adopt the upstream
    copies" is right for a recompression and **destroys a screenshot the user just
@@ -200,30 +200,38 @@ Run before PR. Each layer is gardening, not engineering:
    replaced a screenshot. If you genuinely suspect upstream holds a fix you lack, *look at
    both images* before touching either.
 
-   > 🚨 **Raycast CI's optimization is LOSSY, so `RECOMPRESS` almost never fires for it.**
-   > The verdict table above assumes a CI-optimized copy has byte-identical pixels. It does
-   > not. Measured 2026-08-27 on `claude-artifacts`: a submitted 1,646,438-byte screenshot
-   > came back from merge at **1,050,178 bytes with a different normalized hash** — 36%
-   > smaller, genuinely different pixels, visually indistinguishable. Same image, same
-   > labels, palette-reduced.
+   > 🚨 **`norm()` above uses `sips`, which CANNOT decide this. Compare decoded pixels.**
+   > Raycast CI's re-encode is **lossless** — it strips a fully-opaque alpha channel and
+   > recompresses. Measured on `claude-artifacts` for both releases that changed a
+   > screenshot (#30529 and #30626): `RGBA -> RGB`, the submitted alpha plane holds the
+   > single value `255`, neither copy is palettized, and **all 7,500,000 RGB bytes are
+   > identical**. Not one pixel changes; the 36–37% saving is the dropped channel plus
+   > better zlib.
    >
-   > **So the script reports `DIFFERENT` — "keep local, never auto-adopt" — in precisely the
-   > case where adopting is correct.** The automated verdict is inverted here, and following
-   > it leaves the mirror permanently out of sync: the file conflicts on every subsequent
-   > run, because both sides have moved from the recorded baseline forever after.
+   > **`sips -s format png` preserves channel count**, so it re-encodes RGBA as RGBA and RGB
+   > as RGB and their hashes differ no matter what the pixels hold. It is not a pixel
+   > comparison. Reading it as one is what previously made this callout claim the
+   > optimization was "lossy / palette-reduced" and that the two cases were inseparable —
+   > wrong on both counts, corrected 2026-08-29.
    >
-   > **`DIFFERENT` means STOP AND LOOK, not KEEP LOCAL.** Open both images and decide which
-   > case you are in — there is no automated way to tell them apart, and both fail badly in
-   > opposite directions:
+   > **Decode instead, and the verdict is decidable:**
    >
-   > | What you see | Case | Action |
+   > ```bash
+   > python3 -c "
+   > from PIL import Image; import sys
+   > a, b = Image.open(sys.argv[1]), Image.open(sys.argv[2])
+   > print('SAME-PIXELS' if a.convert('RGB').tobytes()==b.convert('RGB').tobytes()
+   >       else 'DIFFERENT-IMAGE')" "$PUB_DIR/$f" "$f"
+   > ```
+   >
+   > | Result | Case | Action |
    > | --- | --- | --- |
-   > | Same screen, same labels, upstream smaller | CI optimized *your* submission | **adopt upstream** — it is what ships |
-   > | Different content, labels, or state | the user replaced the shot | **keep local** — adopting reverts their work |
+   > | `SAME-PIXELS`, upstream smaller | CI re-encoded *your* submission | **adopt upstream** — it is what ships |
+   > | `DIFFERENT-IMAGE` | the user replaced the shot | **keep local** — adopting reverts their work |
    >
-   > This is why images must be pulled DOWN from upstream after a merge rather than assumed
-   > to match: the bytes that ship are not the bytes you submitted, and no amount of hashing
-   > will tell you whether that is benign.
+   > Confirm by eye on the way past — it costs one look — but the decode is the decider, not
+   > the eyeball. Adopt whenever pixels match: the published bytes are what users see, and
+   > keeping the local original leaves the file differing from upstream on every future run.
 
    Then assert the kept files still meet spec (`2000 × 1250`) — a replaced screenshot is
    the most likely thing in the tree to be the wrong size.
@@ -421,10 +429,17 @@ Run before PR. Each layer is gardening, not engineering:
        docs also say to "remove unused icon assets." Don't trade a visible violation for a payload.
      - **Assert BOTH — the `metadata/` grep alone is not sufficient:**
        ```bash
-       # Match only markdown image/link TARGETS — both must be EMPTY.
+       # Match only markdown image/link TARGETS — all must be EMPTY.
        grep -oE '!?\[[^]]*\]\((\./)?metadata/[^)]*\)' README.md
        grep -oE '!?\[[^]]*\]\((\./)?assets/[^)]*\.(png|jpg|jpeg|gif)\)' README.md
+       # …and the HTML form, which the markdown patterns above cannot see.
+       grep -oE 'src="(\./)?(assets|metadata)/[^"]*"' README.md
        ```
+       > ⚠️ **The third grep is not optional.** The current template's header is an
+       > `<img src="media/…">` tag, so the HTML form is now the *normal* way an image
+       > enters a README — and `src="./assets/icon.png"` (the shape used by upstream
+       > `filezilla`) is invisible to both markdown patterns. Checking only the markdown
+       > syntax passes a README that embeds straight out of the runtime folder.
        > ⚠️ **Match the link syntax, not the bare word.** A loose `grep -o 'metadata/[^)]*'`
        > also hits a `metadata/` line inside a *Project Structure* code block and reports a
        > compliant README as failing — observed 2026-08-26 on `get-app-icon`, whose
@@ -895,7 +910,7 @@ time, and the naive resolution is wrong for both:**
 | Conflicted file | ❌ Wrong | ✅ Right |
 | --- | --- | --- |
 | `CHANGELOG.md` | `--ours` | **theirs for the history, ours for the new entry** |
-| `metadata/*.png`, `media/*.png` | `--theirs` | **ours** when the user replaced the shot; theirs when it's a CI optimization of a shot you already submitted. Run the PNG triage above — and read its lossy-optimization callout, because the hash says `DIFFERENT` for BOTH cases and cannot separate them. Look at the images. |
+| `metadata/*.png`, `media/*.png` | `--theirs` | **ours** when the user replaced the shot; **theirs** when it's a CI re-encode of a shot you already submitted. Run the PNG triage above and use its decoded-pixel check — a file hash says "differs" for BOTH cases; only the decode separates them. |
 
 **CHANGELOG — never `git checkout --ours`.** Your side holds `{PR_MERGE_DATE}` on entries
 that *already shipped*; their side holds the real dates. Taking ours re-stamps shipped
@@ -1017,9 +1032,9 @@ Keep the dispatch trigger as the fast path for an immediate post-merge sync.
 **Reassurance worth stating to the user, because it looks alarming:** the sync downloads
 the extension directory recursively, so it **does** overwrite `media/` and `metadata/`.
 That is not a clobber of newly-updated screenshots *provided those screenshots are in the
-merged PR* — post-merge upstream holds the user's own images, CI-recompressed, so the sync
-replaces a local 1.6 MB copy with a byte-smaller, pixel-identical one. Confirm before
-reassuring: `gh pr diff <N> --name-only | grep -E 'media/|metadata/'`. If a local
+merged PR* — post-merge upstream holds the user's own images, CI-re-encoded, so the sync
+replaces a local 1.6 MB copy with a byte-smaller, **pixel-identical** one — verified by
+decoding both, not assumed. Confirm before reassuring: `gh pr diff <N> --name-only | grep -E 'media/|metadata/'`. If a local
 screenshot is **not** in the PR, the sync would revert it — publish it first.
 
 Full topology, the "what ships" allow-list, and the assets-bloat gotcha:
@@ -1059,11 +1074,12 @@ b. **Adopt anything CI touched on merge** (recompressed PNGs, the stamped
    `{PR_MERGE_DATE}`) before or right after pushing — see steps 1–2 below; do this
    first so the mirror's initial push is already correct rather than needing an
    immediate follow-up commit.
-c. **Fix the README to this fleet's standard header**, not whatever reference you were
-   shown mid-session — a Follow/Stars/Raycast-Store badge block under the H1 (see any
-   recent mirror, e.g. `raycast-claude-artifacts` or `raycast-bookface`, for the exact
-   markup). A different author's README style is not this fleet's convention even if it
-   looked good in the moment.
+c. **Bring the README onto [`reference/readme-template.md`](../../reference/readme-template.md)**
+   — open and read that file. Do **not** reconstruct the shape from memory, from whichever
+   mirror you happen to have open, or from a nice-looking README you were shown
+   mid-session. Most of the fleet predates the template, so "matching an existing mirror"
+   reproduces the retired three-badge form. Includes copying the icon into `media/` for the
+   128px header embed, per the template's icon rule.
 d. **Add the `sync-from-upstream.yml` workflow** — copy the reference implementation
    from `/Users/messina/Developer/GitHub/chrismessina/raycast-claude-artifacts/.github/workflows/sync-from-upstream.yml`
    and its companion `.github/mirror-sync.md`, then:
@@ -1137,18 +1153,31 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
    merge and live only in the monorepo until synced. If step 1 already stamped the date by
    hand, expect the sync to be a no-op on `CHANGELOG.md` and a real change on the images.
 
-   > ⚠️ **If you replaced a screenshot in the release, expect this sync to HALT on it.**
-   > You changed the file and CI re-optimized it, so both sides moved from the recorded
-   > baseline — a genuine both-sides conflict, and a safe sync refuses to pick a winner.
-   > That is correct behavior, not a broken workflow: it files an issue and syncs nothing.
+   > ⚠️ **If you replaced a screenshot in the release, ADOPT THE PUBLISHED COPY BEFORE YOU
+   > DISPATCH.** Pull it down, verify pixels match (decoded, per the triage), commit, push —
+   > *then* run the workflow. The sync short-circuits on byte-equality before it consults the
+   > baseline, so the halt never happens. Dispatch first and it will halt instead: you changed
+   > the file and CI re-encoded it, so both sides moved from the recorded baseline — a genuine
+   > both-sides conflict a safe sync must refuse. That halt is correct behavior, not a broken
+   > workflow, but it is avoidable by ordering.
    >
-   > Resolve it by hand with the PNG triage above, remembering the lossy-optimization
-   > callout: the hash will say `DIFFERENT`, and for a screenshot *you* submitted the right
-   > move is still to **adopt upstream**, because the published bytes are what users see and
-   > keeping the local original re-conflicts on every run forever. Confirm by eye that it is
-   > the same screen first. Then commit the adopted copy, re-run the sync, and close the
-   > issue. *(Verified 2026-08-27 on `claude-artifacts`: run failed on
-   > `metadata/screenshot-1.png`, adopting the published copy made the next run green.)*
+   > If it does halt, resolve it with the PNG triage above: run the decoded-pixel check, and
+   > for a screenshot *you* submitted it reports `SAME-PIXELS` — **adopt upstream**, because
+   > the published bytes are what users see and keeping the local original leaves the file
+   > differing on every run. Then commit the adopted copy, re-run the sync, close the issue.
+   >
+   > *(Both paths verified on `claude-artifacts`. Reactive, 2026-08-27: runs `33111129187`
+   > and `33133301791` failed `conflicts=1` on `metadata/screenshot-1.png`; adopting made run
+   > `33133407396` green. Pre-emptive, 2026-08-29 after #30626: adopted and pushed before
+   > dispatch, and run `33274604623` reported `conflicts=0`, no issue filed.)*
+   >
+   > 🚨 **A green run is not a refreshed baseline.** Adopting first guarantees
+   > `take-upstream=0`, and on a mirror whose `Record the new baseline` step is still gated by
+   > `if: steps.compare.outputs.updated != '0'` that gate stays shut — the baseline silently
+   > stops advancing, and every file that drifts from it is primed to phantom-conflict later.
+   > Check `git log -- .github/upstream-sync-state.json` against your last release date.
+   > Analysis and the fix:
+   > `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/workflow-issues/a-green-mirror-sync-does-not-mean-a-fresh-baseline.md`
 
    Only reconcile manually (FF/rebase) if the workflow is absent on that repo — don't
    rebuild automation that already exists. (Open task: verify this workflow is present,
