@@ -871,11 +871,15 @@ git remote is NOT a blocker here; `ray publish` does not use it.
    this by default; the user reviews prose rather than writing it. **The PR stays a
    draft:** clicking "Ready for review" is the user's step, never yours.
 
-> 🚨 **Anything on disk inside the extension root SHIPS — git ignore rules do not gate it.**
-> `ray publish` copies the extension directory from the filesystem, so `.gitignore` and
-> `.git/info/exclude` hide a file from `git status` (which is all the clean-tree check reads)
-> while the publisher copies it anyway. There is no in-repo hiding place: a file you are not
-> ready to publish must live **outside the extension root**.
+> 🚨 **`ray publish` never consults git — it copies the extension root minus its OWN fixed
+> exclusion list.** Verified against `@raycast/api` 2.1.2
+> (`node_modules/@raycast/api/dist/utils/publish/copy-dir.js`): zero references to `.gitignore`,
+> and the excluded names are exactly `.git`, `.github`, `.direnv`, `.swiftpm`,
+> `.raycast-swift-build`, `compiled_raycast_rust`, `compiled_raycast_swift`, `node_modules`,
+> `raycast-env.d.ts`. **Anything else on disk ships, however thoroughly git ignores it** —
+> `.gitignore` and `.git/info/exclude` only hide a file from `git status`, which is all the
+> clean-tree check reads. A file you are not ready to publish must live **outside the extension
+> root**; the only in-repo exceptions are the nine names above.
 > *(2026-08-28, karakeep: a learning doc deliberately held back was excluded via
 > `.git/info/exclude` to get past the dirty-tree check. It shipped into the PR, had to be deleted
 > from the fork branch by API, and that deletion then blocked the next publish as "edits were made
@@ -1131,7 +1135,8 @@ variability in this flow is that state lives in four places and no single step s
 together, so "is it synced?" has four different answers and the wrong one gets acted on.
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"; EXT="$(jq -r .name package.json)"; git fetch -q origin
+cd "$(git rev-parse --show-toplevel)"; EXT="$(jq -r .name package.json)"
+git fetch -q origin || { echo "ABORT: fetch failed — origin/main below would be STALE"; exit 1; }
 echo "local      $(git rev-parse --short HEAD)"
 echo "mirror     $(git rev-parse --short origin/main)   (ahead $(git rev-list --count origin/main..HEAD), behind $(git rev-list --count HEAD..origin/main))"
 echo "fork       $(gh api repos/chrismessina/extensions/commits/main --jq '.sha[0:7]')"
@@ -1155,7 +1160,14 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
 
 1. **Stamp the CHANGELOG to the merge date — the one genuinely manual, recurring step.** Raycast CI replaces `{PR_MERGE_DATE}` with the merge date *in the merged monorepo copy*, but your **standalone mirror still shows the placeholder**. Read the merged Store CHANGELOG (`curl -sL https://raw.githubusercontent.com/raycast/extensions/main/extensions/<ext-dir>/CHANGELOG.md | head`), copy the stamped date onto the matching entry in your local `CHANGELOG.md`, and commit. Do this so the mirror matches what shipped, rather than waiting for the next sync. **Only stamp the entry that just merged** — never touch an entry that already carries a real date (see the weeding rule above).
 
-2. **Trigger and confirm the sync workflow — do NOT re-derive main sync by hand.** Chris's
+2. **Push the mirror.** The step the warning above exists for, and the one most easily skipped
+   because the stamp in step 1 leaves a clean tree that *looks* finished:
+
+   ```bash
+   git push origin main    # the sync workflow reads origin/main, never your local tree
+   ```
+
+3. **Trigger and confirm the sync workflow — do NOT re-derive main sync by hand.** Chris's
    extensions use `sync-from-upstream.yml` to reconcile the standalone mirror against the
    merged monorepo state.
 
@@ -1207,9 +1219,9 @@ Once the Store PR is **merged**, the same handful of steps run every time. They'
    rebuild automation that already exists. (Open task: verify this workflow is present,
    **and scheduled**, across *all* his standalone mirrors, not just the ones you've shipped.)
 
-3. **Sweep the merged branch.** Delete the merged feature branch. Squash-merge re-SHAs, so identify merged branches by PR state (`gh pr list --head`), not git ancestry.
+4. **Sweep the merged branch.** Delete the merged feature branch. Squash-merge re-SHAs, so identify merged branches by PR state (`gh pr list --head`), not git ancestry.
 
-4. **Refresh any "open at time of writing" references.** If this session wrote docs or a ce-compound learning that described the PR as open/unmerged, update those merge-state phrasings to "shipped." (Narrow — only when such docs exist.)
+5. **Refresh any "open at time of writing" references.** If this session wrote docs or a ce-compound learning that described the PR as open/unmerged, update those merge-state phrasings to "shipped." (Narrow — only when such docs exist.)
 
 See `reference/pr-and-cleanup.md` for the branch-sweep mechanics.
 
