@@ -440,4 +440,19 @@ Every code change here must conform to House Style. The canonical, tagged checkl
 - **A longhand combo is not a distinct combo.** `{cmd+shift+c}` *is* `Common.Copy`; `{cmd+s}` *is* `Common.Save`. Spelling one out next to an action already on that constant is a collision — and `ray lint` will not tell you, because no rule checks the invariant. Check the `Common` table before assigning any custom shortcut.
 - **`[lint]` rules are not your job to fully own.** Fix what you find, but push the durable enforcement to ESLint — don't turn `develop` into a hand-rolled linter.
 - **Forks aren't yours.** Be careful adding personal dependencies to extensions authored by someone else (see the forked-extension caveat).
+- **A doubled effect in a dev log is usually the renderer replay — rule that out before you
+  touch your dependency array.** Outside
+  production Raycast mounts the tree in strict mode and replays effect *setup* on initial mount
+  (setup→cleanup→setup), so an effect body — a network fetch included — runs twice per launch.
+  Two identical `fetch:start` lines in the same millisecond, or a "cancelling-previous" right
+  after mount, is the usual shape — match it against the mount sequence rather than assuming it,
+  since a bad dependency array produces an extra setup that looks identical in a log. See **Development renderer replay** in `CONCEPTS.md` for why reading the
+  extension's own source cannot find the cause. Confirmed by Chris 2026-09-02 (Digger, React 19).
+  Two things this does NOT license: it is *initial-mount* replay, not "every effect always fires
+  twice", so repeats **beyond** that sequence are a real bug — establish the expected replay
+  first, then investigate what is left over. And the replay is a cleanup-bug *detector*: if the
+  second setup corrupts state, overwrites newer data, or strands a spinner, dev mode just handed
+  you a production bug for free. Fix that by making cleanup correct — or, per `CONCEPTS.md`, by
+  coalescing for the replay window only, never by widening a guard into an in-flight lock that
+  would also swallow a genuine refresh.
 - **New files won't show in `git diff`.** Cross-reference `git status` when reviewing what you changed.
