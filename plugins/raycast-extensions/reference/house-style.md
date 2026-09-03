@@ -29,17 +29,44 @@ Mostly **no** — the layers don't overlap:
   and off-the-shelf ESLint can't see (Copy-Error toast pairing, `canAccess(AI)` gating,
   `supportPath`-is-internal).
 
-**`.prettierrc` convention.** Extensions use the Raycast-scaffold standard
-`{"printWidth": 120, "singleQuote": false}` — keep it identical across the fleet
-(this repo's own config deliberately differs: it's docs/YAML, not extension TS, and
-excludes Markdown so hand-authored prose isn't reflowed).
+### `[build]` `.prettierrc` is this exact file, in every self-authored extension
 
-**Import ordering** is the one formatting-shaped candidate. It's *not* a rule (adoption
-was too split — see [Still to enumerate](#still-to-enumerate)), but it can be made
-deterministic with `@ianvs/prettier-plugin-sort-imports`. Piloted on `reader`
-(2026-07-24): sorts cleanly, `tsc` + `ray lint` both pass (Raycast's bundled Prettier
-accepts the reordered output), ~27/42 files reflow one-time. Viable if promoted; left
-opt-in for now.
+```json
+{
+  "printWidth": 120,
+  "singleQuote": false,
+  "plugins": ["@ianvs/prettier-plugin-sort-imports"],
+  "importOrder": ["<BUILTIN_MODULES>", "<THIRD_PARTY_MODULES>", "^@raycast/(.*)$", "^[.]"]
+}
+```
+
+The first two keys are the Raycast-scaffold standard. The last two add deterministic
+import ordering — Node builtins, then third-party, then `@raycast/*`, then relative.
+
+**`@ianvs/prettier-plugin-sort-imports` must be in `devDependencies`** (`^4.7.0`) or
+Prettier fails to load the plugin and every format run errors. Config and dependency
+are a matched pair: never add one without the other.
+
+**Promoted from opt-in to rule, 2026-08-29.** The earlier note here said adoption was
+"too split" and cited a `reader` pilot. Both claims are now false: 12 extensions carry
+this exact config, all 12 declare the plugin, and there are **zero** mismatches in
+either direction across the fleet. The `reader` pilot itself has since lost both the
+config and the plugin, so the receipt that entry rested on no longer exists — the
+majority of actively-maintained extensions is the receipt now.
+
+> **`[both]` Self-authored extensions only.** Never add this to a fork you don't own.
+> Sorting imports rewrites every file that has more than one import block, burying your
+> actual change in an unrelated reformat and making the Store PR unreviewable. Same
+> reasoning as the `@chrismessina/raycast-kit` rule below. Check `author` in
+> `package.json` before touching `.prettierrc`.
+
+This repo's own config deliberately differs: it's docs/YAML, not extension TS, and
+excludes Markdown so hand-authored prose isn't reflowed.
+
+Still on the plain two-key config and eligible for the change (self-authored, as of
+2026-08-29): `central-icon-system`, `claude-artifacts`, `ejection-seat`, `google-maps`,
+`reader`, `secret-browser-commands`, `store-updates`, `threads-client`. Apply it when
+you are next in one of them for another reason — a standalone reformat PR is noise.
 
 ---
 
@@ -111,6 +138,53 @@ typechecks.
   rather than reaching for `as` / `!`.
 
 ---
+
+## Runtime correctness (added 2026-09-02, from the attio 2.0 crash rounds)
+
+Every rule here is a defect class that shipped through a green `tsc` + `ray build` +
+`ray lint` + full test suite, and was caught only by a human launching the app.
+
+### `[verify]` `eslint-plugin-react-hooks` with `rules-of-hooks: error` is present
+
+`@raycast/eslint-config` carries NO react-hooks rules, so a hook placed below a
+guard's early return (`if (g) return g;` then a `useMemo`) lints clean and crashes at
+runtime ("Rendered more hooks than during the previous render" — attio Tasks,
+2026-09-02). Every extension's eslint config adds the plugin explicitly. Audit: the
+config must reference `react-hooks/rules-of-hooks`.
+
+### `[verify]` `madge --circular` runs as a `pretest` gate
+
+`ray` bundles to CJS, where an import cycle silently evaluates one module's default
+export as `undefined` — "Element type is invalid" at runtime, invisible to `tsc`
+(attio: records↔objects cycle, latent for days, detonated when an unrelated import
+changed evaluation order). Audit: `package.json` has `"check:cycles": "madge
+--circular --extensions ts,tsx src"` wired into `pretest`.
+
+### `[build]` `useCachedPromise` keying: the fn's TEXT is the namespace, args are the key
+
+The persisted cache namespaces by `hash(fn.toString())` and keys by `hash(args)`.
+Two consequences, both learned from live crashes:
+- **A shared wrapper collapses namespaces.** Any hook that funnels different
+  operations through one literal function (a `(...args) => fn(...args)` wrapper) MUST
+  put an operation discriminator into the args, or equal-args calls overwrite each
+  other's cached data (attio: Tasks rendered a cached members array).
+- **A fn returning a fn IS the pagination contract.** `(deps) => async ({page}) =>`
+  makes useCachedPromise treat results as page arrays — using that shape for a
+  single-object fetch crashes on `.length`. Curried form only where a `pagination`
+  object is actually passed to the `<List>`.
+
+### `[both]` Empty-state assets are themed or vector
+
+A single dark PNG/SVG empty-state asset renders as a dark slab on light theme. Either
+`{ source: { light, dark } }` pairs or a plain `Icon`. Audit: grep `icon="empty/` and
+any bare string icon path for a missing themed twin.
+
+### `[build]` A UI change is not done until the app has been LAUNCHED
+
+`tsc` + build + lint + tests cannot see module-eval order, hook-order drift, cache
+shape, or a dark asset on a light ground. After any wave of UI work, run the
+extension (`npm run dev`) and open the changed commands before reporting — or say
+plainly that rendered output is unverified and hand the eyes-only list over.
 
 ## Required patterns
 
@@ -313,6 +387,38 @@ did, which defeats the point of the command.
 - **Audit:** `[build]` judgment — grep success-toast titles on `toggle-*` commands for a
   bare `"Toggled"` / `"… Toggled"` with no on/off or named result, and flag it. Not a
   hard `[verify]` assertion (the "genuinely unknowable" carve-out is a judgment call).
+
+### `[both]` Every `isShowingDetail` list carries a "Toggle Sidebar" action
+
+Any `List` that renders a detail pane (`isShowingDetail`) must let the user collapse it —
+a permanently-open sidebar crushes list titles into unreadable stubs (attio 2.0, notes
+view, 2026-09-01: every title truncated to ~10 chars with no way out).
+
+The pattern, verbatim:
+
+```tsx
+const [showDetail, setShowDetail] = useCachedState<boolean>("show-detail-<view>", true);
+// ...
+<List isShowingDetail={items.length > 0 && showDetail} ...>
+// in EVERY item's ActionPanel:
+<Action
+  title="Toggle Sidebar"
+  icon={Icon.AppWindowSidebarRight}
+  shortcut={{ macOS: { modifiers: ["cmd", "shift"], key: "d" }, Windows: { modifiers: ["ctrl", "shift"], key: "d" } }}
+  onAction={() => setShowDetail((v) => !v)}
+/>
+```
+
+- **`useCachedState`, not `useState`** — the preference survives relaunch; a user who
+  collapses the sidebar means it.
+- **Title is exactly "Toggle Sidebar"**; shortcut is exactly ⌘⇧D / Ctrl⇧D,
+  platform-explicit (no `Common` constant covers it).
+- **On every item's panel**, not just some — the action must be reachable from whichever
+  row is selected.
+- **Audit:** grep for `isShowingDetail`; every hit must have a matching
+  `"Toggle Sidebar"` action in the same view and a `useCachedState`-backed flag in the
+  `isShowingDetail` expression. A bare `isShowingDetail={true}` or one with no toggle
+  action is a finding.
 
 ### `[both]` Count-bearing copy uses correct singular/plural agreement — never `item(s)`
 
@@ -607,6 +713,9 @@ Two independent decisions. Don't conflate them. (Full ruleset + conflict invaria
 | macOS + Windows     | No             | `{ macOS: {...}, Windows: {...} }`                    |
 
 **Audit note:** a bare `cmd`-only shortcut is a defect *only if* `platforms` **explicitly includes Windows**. The auditor MUST read `package.json` `platforms` before flagging — and must treat an **absent** `platforms` as macOS-only, not as cross-platform. Skipping this mis-fires on every Mac-only extension *and* on every extension with no `platforms` field, which together are the majority of the fleet.
+
+- **`[build]`** Pin/unpin actions use `Icon.Tack` / `Icon.TackDisabled` (the paired set) — never `Icon.Pin`/`Icon.PinDisabled` (Chris preference, attio 2026-09-01).
+- **`[build]`** Person avatars rendered as icons/accessories always carry `mask: Image.Mask.RoundedRectangle` (squircle) — bare circular/unmasked avatar rectangles are a finding (attio, 2026-09-02).
 
 ---
 
@@ -1081,8 +1190,11 @@ they aren't re-discovered from scratch; promote one when it earns it.
   it. Closer to a per-command correctness call than a blanket rule.
 - **Default icon filename `extension-icon.png`.** ~10/21 use it, ~11/21 use a
   brand-specific name — a coin flip, not a convention. Not codified.
-- **`@raycast/api` import ordering.** 35–85% adherence and no `import/order` /
-  `simple-import-sort` configured anywhere. Would need tooling first; not enforced.
+- ~~**`@raycast/api` import ordering.**~~ **Promoted 2026-08-29** — see the
+  `.prettierrc` rule above. The 2026-07-23 audit found "no tooling configured
+  anywhere"; a re-audit found `@ianvs/prettier-plugin-sort-imports` wired up in 12
+  extensions with zero config/dependency mismatches. The tooling this entry was
+  waiting on already shipped.
 
 **Rejected outright** (checked, no real pattern): `ActionPanel.Section` usage ratio;
 `showFailureToast` vs manual Failure toast (manual dominates — already covered by the
