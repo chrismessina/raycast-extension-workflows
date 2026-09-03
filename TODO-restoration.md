@@ -3,6 +3,40 @@
 Six mirrors lost local-only formatting conventions when the blind `sync-from-upstream`
 workflow first ran. All six now run the safe workflow, so restored work will stick.
 
+## Status — 2026-09-02
+
+| Repo | State | Commit |
+| --- | --- | --- |
+| `at-profile` | done — 16 `src/` files re-sorted | `1f770d98` |
+| `bookface` | done — 12 `src/` files | `0d0f8e2c` |
+| `tesla-energy` | done — 3 `src/` files | `6c40f5bb` |
+| `trimmy` | done — 3 `src/` files | `a1815e02` |
+| `wrap-unwrap` | done; README rebuild + LICENSE + `media/` in progress | `f62b277f` |
+| `fathom` | **PARKED** — Chris is mid-feature, see below | — |
+
+Verified against each remote (`HEAD`, signature, `package.json` devDependency, and the
+`.prettierrc` plugin block), not on the agents' reports.
+
+**`fathom` is parked deliberately.** `git pull --ff-only` refuses — 13 of its 27 dirty
+files collide — and `package.json`/`package-lock.json` carry an unrelated in-flight
+download feature (`@chrismessina/raycast-download`, `raycast-kit`, a `copy-runner` build
+step, two new preferences, six untracked source files). Staging the lockfile would sweep
+that whole feature into a formatting commit, and `git add -p` cannot split a lockfile.
+Chris will land the download work first; then this is nearly a no-op, because fathom's
+local checkout already holds the sorted state. **Do not touch fathom until he says so.**
+
+### Two corrections this work produced
+
+- **`bookface` failed differently.** Its remote did NOT revert `.prettierrc` — it stripped
+  the plugin from `package.json`/`package-lock.json` and left `.prettierrc` still pointing
+  at it. A config/dependency mismatch masked by a stale `node_modules` copy: clean locally,
+  broken on any fresh checkout or CI run. Check that seam, not just the config file.
+- **"`npm install` only if absent from `node_modules`" (below) is wrong** and three agents
+  correctly worked around it. The blind sync stripped the *lockfile* entries while
+  `node_modules` stayed populated, so that test says "don't reinstall" while the lock still
+  needs reconciling. Use `npm install --package-lock-only`: it fixes the lock without
+  touching the install tree.
+
 Full incident audit: https://claude.ai/code/artifact/74d9d8ba-942a-49a9-9dd2-ae73787b557e
 Fleet context: `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/plugins/raycast-extensions/reference/my-extensions-mirror.md`
 
