@@ -301,7 +301,7 @@ else's agentic contribution are worth shipping.
 | Path | Ships upstream? | Test |
 | --- | --- | --- |
 | `AGENTS.md` (root) | **yes** | The canonical name. Cross-tool, and already the fleet majority. |
-| `docs/**` | **yes, selectively** | Would a *contributor to this extension* need it? Architecture, configuration, known issues, content-extraction notes: yes. Session plans, handoffs, `ce-compound` learnings, migration post-mortems: no — those are process, not product. |
+| `docs/**` | **yes, selectively** | Would a *contributor to this extension* need it? Architecture, configuration, known issues, content-extraction notes: yes. **`docs/solutions/` `ce-compound` learnings: yes, in an extension you author** — Chris runs that skill *to support other contributors*, so on his own extensions the learnings are the product, not a by-product (his ruling, 2026-09-02, on `digger` #30742; an earlier version of this row excluded them and was wrong). What stays behind is material tied to one working session and useless to a stranger: handoffs, session plans, a migration post-mortem for a migration that is over. |
 | `CLAUDE.md` / `WARP.md` | **no** | Not a privacy question, a naming one: consolidate on `AGENTS.md`. Every agent reads it. |
 
 **In an extension you do NOT author** — add **nothing**. Not `AGENTS.md`, not `docs/`,
@@ -338,6 +338,12 @@ file that leaked in an earlier release stays until something removes it, and an
 allow-list copy silently preserves it because the bytes match — published and local
 agree, so every staleness check passes clean.
 
+**A separate failure wears the same clothes: a stale fork baseline.** Branching from
+`chrismessina/extensions` main rather than upstream main proposed *adding*
+`extensions/threads/TODO.md` and `extensions/threads/docs/eslint-9-upgrade-guide.md` —
+files the fork carries and upstream does not (2026-09-02). That is not a should-this-ship
+question and no ship-time allow-list catches it; branch from upstream main.
+
 **Known leaks live on `raycast/extensions` main as of 2026-09-02** — verified by fetching
 the published directory, not inferred:
 
@@ -351,15 +357,6 @@ the published directory, not inferred:
 `digger`'s `.private/docs/` removal is in **open PR #30742**, not merged — the files are
 still public. Nothing else above has a fix in flight. Sweep them into the next PR that
 touches each extension rather than opening five PRs that change nothing else.
-
-**Already published? Delete it in this PR.** The copy step only prevents *new* leaks; a
-file that leaked in an earlier release stays until something removes it, and an
-allow-list copy silently preserves it because the bytes match. Verified 2026-09-02 on
-`digger`: `.private/docs/` (4 internal notes) had been public since an earlier release
-and every staleness check passed clean, because published and local agreed. The same
-session's first push would separately have *added* `extensions/threads/TODO.md` and
-`extensions/threads/docs/eslint-9-upgrade-guide.md` to the monorepo — the fork's copy
-of that extension carries both and upstream does not.
 
 ```bash
 # What is published that should not be? Run BEFORE building the branch.
