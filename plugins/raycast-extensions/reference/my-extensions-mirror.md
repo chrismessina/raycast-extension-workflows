@@ -83,11 +83,55 @@ with the rationale in
 (kept under `.github/` deliberately — `ray publish` excludes that directory, so the
 doc lives in the mirror without shipping to the Store).
 
-**Fleet status (2026-08-03):** `raycast-claude-artifacts` has the safe version on
-`main`. The other five — `raycast-digger`, `raycast-get-app-icon`,
-`raycast-store-updates`, `raycast-karakeep`, `raycast-reader` — have it **in an open
-PR** (`ci/safe-upstream-sync`); they still run the blind-overwrite version until
-those merge.
+**Fleet status (re-verified 2026-09-02 against the DEFAULT BRANCH of every repo via the
+API, not against local checkouts).** 22 `raycast-*` repos carry a `sync-from-upstream.yml`;
+the rest carry none.
+
+**Seven run the safe three-way version on `main`** — `raycast-claude-artifacts`,
+`raycast-digger`, `raycast-ejection-seat`, `raycast-get-app-icon`, `raycast-karakeep`,
+`raycast-reader`, `raycast-store-updates`. All seven record the baseline
+**unconditionally**, and all seven now also **propagate upstream deletions** (see the
+DELETED rows in the workflow's own decision table) and open their PR **idempotently**.
+
+`raycast-store-updates` joined the seven on 2026-09-02. It had been ported earlier but
+**incompletely** — missing both halves of the unconditional-baseline fix *and* the
+`Commit the refreshed baseline` step — and was rebuilt wholesale from karakeep with only
+its cron minute restored. Treat "has the safe workflow" and "has a *complete* safe
+workflow" as different claims: compare the step list, not the presence of one step name.
+
+**The other 15 still run the blind-overwrite version** — the one the 🚨 contract above
+forbids. Their workflows are byte-identical apart from the cron minute: `curl -fsSL … -o
+"$path"` over every advertised file with no comparison, then `git add`, `git commit`,
+`git push` **straight to `main`** with no PR. That violates contract rules 1 and 2, and it
+is the loop that reverted a README on `raycast-claude-artifacts` on 2026-08-01. They are
+not protected by the three-way compare, the state file, or the PR gate.
+
+**The blocker that kept the safe version from ever working is a repo SETTING, not code.**
+`gh pr create` from `GITHUB_TOKEN` is refused unless *Settings → Actions → General →
+"Allow GitHub Actions to create and approve pull requests"* is on. It was off in six of
+the seven — only `karakeep` had it — so those mirrors were silently incapable of the one
+thing the design exists to do, and looked green purely because they had nothing to PR.
+Turned on across all seven 2026-09-02; **check it on any repo you port to**, because the
+symptom is a workflow that appears to work until the first time it matters:
+
+```bash
+gh api "repos/chrismessina/<repo>/actions/permissions/workflow" \
+  --jq '.can_approve_pull_request_reviews'   # must be true
+```
+
+Re-derive the fleet split rather than trusting this paragraph — it has been wrong before,
+and a bare grep for the *gate* reports the same `0` for "fixed" and for "no such step".
+Read the **default branch**, not the worktree: several checkouts sit on feature branches,
+where a workflow change is inert because Actions runs the scheduled workflow from the
+default branch.
+
+```bash
+for r in $(gh repo list chrismessina --limit 200 --json name --jq '.[].name' | grep '^raycast-'); do
+  c=$(gh api "repos/chrismessina/$r/contents/.github/workflows/sync-from-upstream.yml" \
+        --jq '.content|@base64d' 2>/dev/null) || { echo "none   $r"; continue; }
+  grep -q "Record the new baseline" <<<"$c" && echo "safe   $r" || echo "BLIND  $r"
+done
+```
 
 **Porting checklist** (what actually varies per repo — everything else is verbatim):
 
