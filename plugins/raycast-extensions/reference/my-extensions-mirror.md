@@ -287,23 +287,70 @@ present or not). Any list in a document drifts:
 gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | sort
 ```
 
-🚨 **DO NOT SHIP local-only working artifacts, and strip them if they are already
-published.** A dot-prefix is not privacy — GitHub renders `.private/` in a public repo
-exactly like any other directory, and everything under `extensions/<name>/` in
-`raycast/extensions` is world-readable. Named offenders, all real:
+### Agentic and supporting docs — the rule (decided 2026-09-02)
 
-| Path | Why it must not ship |
+**The axis is AUTHORSHIP, not file type.** An earlier version of this block banned
+`AGENTS.md` and `docs/**` outright. That was already false when written: `AGENTS.md` is
+merged upstream in `karakeep`, `ejection-seat`, `trimmy` and `reader-mode`, and `docs/**`
+in seven of Chris's extensions. Raycast accepts both. **Chris's call, as the extension
+owner, is whether to include them** — and he decided to, because docs that help someone
+else's agentic contribution are worth shipping.
+
+**In an extension you author** — permitted, and encouraged where they earn their place:
+
+| Path | Ships upstream? | Test |
+| --- | --- | --- |
+| `AGENTS.md` (root) | **yes** | The canonical name. Cross-tool, and already the fleet majority. |
+| `docs/**` | **yes, selectively** | Would a *contributor to this extension* need it? Architecture, configuration, known issues, content-extraction notes: yes. Session plans, handoffs, `ce-compound` learnings, migration post-mortems: no — those are process, not product. |
+| `CLAUDE.md` / `WARP.md` | **no** | Not a privacy question, a naming one: consolidate on `AGENTS.md`. Every agent reads it. |
+
+**In an extension you do NOT author** — add **nothing**. Not `AGENTS.md`, not `docs/`,
+not a `.prettierrc` convention. The single exception: **the file already exists, merged,
+in `extensions/<name>/` on `raycast/extensions` main.** Then follow its conventions and
+you may edit it. An open PR does not count, and neither does the file existing in your
+fork or your local checkout — check the merged monorepo:
+
+```bash
+gh api "repos/raycast/extensions/contents/extensions/$EXT/AGENTS.md" --jq '.path' 2>/dev/null \
+  || echo "not upstream — do NOT add it to an extension you do not author"
+```
+
+🚨 **Never ships, in ANY extension, yours or not.** A dot-prefix is not privacy — GitHub
+renders `.private/` in a public repo exactly like any other directory, and everything
+under `extensions/<name>/` in `raycast/extensions` is world-readable:
+
+| Path | Why |
 | --- | --- |
-| `.private/**` | internal notes; the name promises something the monorepo does not honour |
-| `docs/**` (working notes, `ce-compound` learnings) | ships engineering process to end users |
-| `TODO.md` | your backlog, on a public page reviewers read |
-| `CLAUDE.md` / `AGENTS.md` / `WARP.md` | agent instructions |
-| `.claude/`, `.github/`, `.windsurf/` | tooling config; `.github/` is dropped anyway |
-| `.github/docs/**`, `.github/assets/**` | review docs, icon sources |
+| **any dot-directory** — `.private/`, `.claude/`, `.windsurf/`, `.cursor/` | Internal notes and tooling config. `.private/` is the worst offender because the name promises something the monorepo does not honour. |
+| `TODO.md` | Your backlog, on a public page reviewers read. |
+| `.github/**` | Dropped by `ray publish` anyway; `.github/docs/**` and `.github/assets/**` are review docs and icon sources. |
 
-**These are fine in the standalone mirror — that is the point of having one.** The rule
-is about the *monorepo copy* only, so exclude them at the copy step rather than deleting
-them locally.
+The required dotfiles — `.gitignore`, `.prettierrc`, the eslint config — are not
+dot-*directories* and do ship. That is the whole exception.
+
+**Dot-directories MAY be tracked in the standalone mirror** (Chris's call, 2026-09-02) —
+that is what a mirror is for. But tracked-and-gitignored is a genuinely broken state: it
+is what made `digger`'s sync fail every day until the workflow gained
+`git check-ignore --no-index`. If you track it, do not also ignore it.
+
+**Already published? Delete it in this PR.** The copy step only prevents *new* leaks; a
+file that leaked in an earlier release stays until something removes it, and an
+allow-list copy silently preserves it because the bytes match — published and local
+agree, so every staleness check passes clean.
+
+**Known leaks live on `raycast/extensions` main as of 2026-09-02** — verified by fetching
+the published directory, not inferred:
+
+| Extension | Public right now |
+| --- | --- |
+| `digger` | `.private/docs/` (4 internal notes) **and** `TODO.md` (16.5 KB) |
+| `karakeep` | `TODO.md` (7.5 KB) |
+| `secret-browser-commands` | `TODO.md`, and `CLAUDE.md` (should be `AGENTS.md`) |
+| `at-profile`, `fathom` | `TODO.md` |
+
+`digger`'s `.private/docs/` removal is in **open PR #30742**, not merged — the files are
+still public. Nothing else above has a fix in flight. Sweep them into the next PR that
+touches each extension rather than opening five PRs that change nothing else.
 
 **Already published? Delete it in this PR.** The copy step only prevents *new* leaks; a
 file that leaked in an earlier release stays until something removes it, and an
@@ -316,7 +363,7 @@ of that extension carries both and upstream does not.
 
 ```bash
 # What is published that should not be? Run BEFORE building the branch.
-LEAKS='^(\.private|docs|TODO\.md|CLAUDE\.md|AGENTS\.md|WARP\.md|\.claude|\.windsurf)$'
+LEAKS='^(\.private|\.claude|\.windsurf|\.cursor|TODO\.md|CLAUDE\.md|WARP\.md)$'
 gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | grep -E "$LEAKS" \
   && echo "^^ delete these in this PR (git rm -r) — they are public right now"
 ```

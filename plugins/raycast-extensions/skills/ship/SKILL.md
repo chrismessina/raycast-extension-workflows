@@ -638,6 +638,20 @@ returned — paste the actual output, don't assert it:
       ```
 - [ ] **dimensions** → `metadata/*.png` are 2000 × 1250; the icon is 512 × 512 (`sips -g pixelWidth
       -g pixelHeight`). Neither `ray build` nor `ray lint` checks this.
+- [ ] **no local-only working artifacts in the monorepo copy — and none already published.**
+      `.private/`, `docs/`, `TODO.md`, `CLAUDE.md`/`AGENTS.md`/`WARP.md`, `.claude/`, `.windsurf/`
+      belong in the standalone mirror, never in `extensions/<name>/`. A dot-prefix is not privacy:
+      everything under that path in `raycast/extensions` is world-readable. **Check the PUBLISHED
+      directory too, not just what you are about to copy** — an allow-list copy silently preserves
+      an earlier leak, because published and local agree and every staleness check passes clean:
+      ```bash
+      LEAKS='^(\.private|\.claude|\.windsurf|\.cursor|TODO\.md|CLAUDE\.md|WARP\.md)$'
+      gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | grep -E "$LEAKS" \
+        && echo "^^ public right now — git rm -r these in THIS PR"
+      ```
+      *(2026-09-02, `digger`: `.private/docs/` — 4 internal notes — had been public since an earlier
+      release and no gate saw it. The same session's first push would separately have added
+      `extensions/threads/TODO.md` and an eslint upgrade guide to the monorepo.)*
 - [ ] screenshot count ≤ 6 (`ls metadata/*.png | wc -l`)
 - [ ] **external effects were verified at their destination** — for any action in the diff whose
       result leaves the extension (clipboard/paste, a written file, a Finder reveal, an `open`
