@@ -83,28 +83,65 @@ with the rationale in
 (kept under `.github/` deliberately — `ray publish` excludes that directory, so the
 doc lives in the mirror without shipping to the Store).
 
-**Fleet status (re-verified 2026-09-02 against the DEFAULT BRANCH of every repo via the
-API, not against local checkouts).** 22 `raycast-*` repos carry a `sync-from-upstream.yml`;
-the rest carry none.
+**Fleet status (2026-09-02, verified against the DEFAULT BRANCH of every repo via the
+API, not against local checkouts).** **No mirror runs the blind workflow any more.**
+21 `raycast-*` repos carried a `sync-from-upstream.yml`: 17 now run the safe three-way
+version, and 4 had it removed because they were never mirrors at all.
 
-**Seven run the safe three-way version on `main`** — `raycast-claude-artifacts`,
-`raycast-digger`, `raycast-ejection-seat`, `raycast-get-app-icon`, `raycast-karakeep`,
-`raycast-reader`, `raycast-store-updates`. All seven record the baseline
-**unconditionally**, and all seven now also **propagate upstream deletions** (see the
-DELETED rows in the workflow's own decision table) and open their PR **idempotently**.
+**The 17 safe mirrors** — `at-profile`, `bookface`, `claude-artifacts`, `digger`,
+`domainr`, `ejection-seat`, `fathom`, `fly`, `get-app-icon`, `google-books`, `karakeep`,
+`reader`, `secret-browser-commands`, `store-updates`, `tesla-energy`, `trimmy`,
+`wrap-unwrap`. Every one records the baseline **unconditionally**, **propagates upstream
+deletions** (the DELETED rows in the workflow's decision table), opens its PR
+**idempotently**, and has Actions PR-creation enabled. Each carries its own cron minute
+and nothing else that differs.
 
-`raycast-store-updates` joined the seven on 2026-09-02. It had been ported earlier but
-**incompletely** — missing both halves of the unconditional-baseline fix *and* the
-`Commit the refreshed baseline` step — and was rebuilt wholesale from karakeep with only
-its cron minute restored. Treat "has the safe workflow" and "has a *complete* safe
-workflow" as different claims: compare the step list, not the presence of one step name.
+**The 4 archived** — `brew-2.0`, `screenocr`, `wayback-machine`, `word-count`. These are
+extensions **other people author** (`nhojb`, `huzef44`, `pernielsentikaer`, `itsmingjie`)
+where Chris is a listed contributor; the repos only ever held the working history behind a
+contribution. There is nothing to mirror, so the workflow was deleted and the repos
+archived — read-only, history intact, Actions dead. **Do not port a sync workflow to a
+repo whose extension you do not author**; a mirror presupposes ownership of the upstream
+copy.
 
-**The other 15 still run the blind-overwrite version** — the one the 🚨 contract above
-forbids. Their workflows are byte-identical apart from the cron minute: `curl -fsSL … -o
-"$path"` over every advertised file with no comparison, then `git add`, `git commit`,
-`git push` **straight to `main`** with no PR. That violates contract rules 1 and 2, and it
-is the loop that reverted a README on `raycast-claude-artifacts` on 2026-08-01. They are
-not protected by the three-way compare, the state file, or the PR gate.
+`raycast-store-updates` and `raycast-fly` are the cautionary pair. store-updates had been
+ported earlier but **incompletely** — missing both halves of the unconditional-baseline fix
+*and* the `Commit the refreshed baseline` step. Treat "has the safe workflow" and "has a
+*complete* safe workflow" as different claims: compare the step list, not the presence of
+one step name.
+
+### What the blind workflow actually cost — read this before relaxing any of the above
+
+The blind version was not naive. It aborted on a truncated tree, asserted its download
+count, staged only what it fetched, and refused to prune on a thin manifest. All of that
+protects against a *failed download*. **None of it protects against local divergence**,
+because without a baseline the workflow cannot tell "upstream changed this" from "I
+changed this" — so a mirror behind upstream got a correct forward-sync and a mirror
+*ahead* of upstream got flattened.
+
+It ran fleet-wide for the first time on **2026-08-01** and did its damage in about
+twenty-two minutes, reporting success everywhere:
+
+- **`raycast-fly`** lost its entire v2 rewrite — 24 source files removed
+  (`src/api/`, `src/pages/`, all 8 AI tools, both commands) and `package.json` reverted to
+  upstream's v1, erasing ~30 commits from 2026-03-30/31 that had never been upstreamed.
+  Restored 2026-09-02 as a forward commit (`bc0ca877`), not a force-push, so the
+  destructive commit `e32351e3` stays in history as the record.
+- **`raycast-secret-browser-commands`** lost `src/data/paths.md` (391 lines). It lived
+  inside `src/`, which the pruner scans. **Local-only files placed under a synced
+  directory are deleted within 24 hours** — put them at root `docs/` or upstream them.
+- **`raycast-google-books`** lost `useCachedState` search persistence.
+- **Six repos** lost the 2026-07-24 import-sort pass and their `.prettierrc`, because that
+  hygiene was local-only and never upstreamed. Local-only *conventions* revert exactly
+  like local-only code does.
+
+**The population it hurt is the population the mirror pattern exists to serve** — mirrors
+carrying work that had not yet reached the monorepo. Every one of the 17 mirrors was ahead
+of upstream in file count when converted.
+
+**A green run proves nothing about damage.** All 33 daily runs since were green, including
+the ones that reverted work, and the audit that would have caught it was defeated by a
+query that fails silently — see the trap below.
 
 **The blocker that kept the safe version from ever working is a repo SETTING, not code.**
 `gh pr create` from `GITHUB_TOKEN` is refused unless *Settings → Actions → General →
@@ -131,6 +168,26 @@ for r in $(gh repo list chrismessina --limit 200 --json name --jq '.[].name' | g
         --jq '.content|@base64d' 2>/dev/null) || { echo "none   $r"; continue; }
   grep -q "Record the new baseline" <<<"$c" && echo "safe   $r" || echo "BLIND  $r"
 done
+```
+
+### 🚨 The filters that answer "none" and "cannot tell" with the same value
+
+Three separate audits of this fleet have been defeated by a query that returns a clean,
+plausible, wrong answer instead of an error. Assume any filter is one of these until you
+have proved otherwise, by running it against a case whose answer you already know.
+
+| Query | Silent failure |
+| --- | --- |
+| `gh api "repos/O/R/commits?author=github-actions[bot]"` | The `[]` in the login breaks the filter. Returns `[]`. Reported **0** bot commits across 14 repos where **25** existed — an audit built on it concludes the fleet is dormant and nothing was ever overwritten. |
+| `grep -c "updated != '0'"` to test the baseline gate | Returns `0` both when the gate is *fixed* and when the whole step is *missing*. Produced a sweep labelling 18 blind repos as fixed. Classify on the step's **presence** first, then its gate. |
+| `gh api repos/raycast/extensions/contents/extensions` | Truncates at 1000 entries with no flag. Made every alphabetically-late slug look absent upstream — 11 false verdicts in a row. Use the tree API and assert `.truncated == false`. |
+
+Filter on the commit **message**, which is under your control, rather than on the author:
+
+```bash
+gh api "repos/chrismessina/raycast-<name>/commits?per_page=100" \
+  --jq '.[] | select(.commit.message | startswith("chore: sync from upstream"))
+        | "\(.commit.author.date[0:10])  \(.sha[0:8])"'
 ```
 
 **Porting checklist** (what actually varies per repo — everything else is verbatim):
@@ -206,18 +263,63 @@ since the mirror has nothing to diverge from yet.
 
 ## What ships (the published file set)
 
-Copy ONLY these into `extensions/<name>/` — match the published v1.0's set exactly:
+Copy ONLY these into `extensions/<name>/`:
 
 ```
-assets/  metadata/  src/
-.gitignore  CHANGELOG.md  eslint.config.js  package-lock.json  package.json
-README.md  tsconfig.json
+assets/  media/  metadata/  src/
+.gitignore  .prettierrc  CHANGELOG.md  eslint.config.js  LICENSE
+package-lock.json  package.json  README.md  tsconfig.json
 ```
 
-**Do NOT ship** local-only artifacts even if tracked in the working repo:
-`.github/docs/**` (review/findings docs, fixtures), `.github/assets/**` (icon
-sources), `CLAUDE.md`. Use the published dir's file list as the allow-list, not a
-blanket copy of the working repo.
+`media/` was missing from this list until 2026-09-02 and its absence was actively
+harmful: the README template's 128px header is an `<img src="media/…">`, so moving an
+icon out of `assets/` to satisfy the README-asset rule and then *not* shipping `media/`
+turns the Store page's header into a broken image. It does ship — `karakeep` and
+`get-app-icon` both publish `media/` upstream today. `LICENSE` and `.prettierrc` were
+missing for the same reason: the list was written from one extension's v1.0 and never
+re-derived.
+
+**Derive the list, don't recite it.** The authority is the published directory, which
+is one fetch away — and it is per-extension (`eslint.config.js` vs `.mjs`, `TODO.md`
+present or not). Any list in a document drifts:
+
+```bash
+gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | sort
+```
+
+🚨 **DO NOT SHIP local-only working artifacts, and strip them if they are already
+published.** A dot-prefix is not privacy — GitHub renders `.private/` in a public repo
+exactly like any other directory, and everything under `extensions/<name>/` in
+`raycast/extensions` is world-readable. Named offenders, all real:
+
+| Path | Why it must not ship |
+| --- | --- |
+| `.private/**` | internal notes; the name promises something the monorepo does not honour |
+| `docs/**` (working notes, `ce-compound` learnings) | ships engineering process to end users |
+| `TODO.md` | your backlog, on a public page reviewers read |
+| `CLAUDE.md` / `AGENTS.md` / `WARP.md` | agent instructions |
+| `.claude/`, `.github/`, `.windsurf/` | tooling config; `.github/` is dropped anyway |
+| `.github/docs/**`, `.github/assets/**` | review docs, icon sources |
+
+**These are fine in the standalone mirror — that is the point of having one.** The rule
+is about the *monorepo copy* only, so exclude them at the copy step rather than deleting
+them locally.
+
+**Already published? Delete it in this PR.** The copy step only prevents *new* leaks; a
+file that leaked in an earlier release stays until something removes it, and an
+allow-list copy silently preserves it because the bytes match. Verified 2026-09-02 on
+`digger`: `.private/docs/` (4 internal notes) had been public since an earlier release
+and every staleness check passed clean, because published and local agreed. The same
+session's first push would separately have *added* `extensions/threads/TODO.md` and
+`extensions/threads/docs/eslint-9-upgrade-guide.md` to the monorepo — the fork's copy
+of that extension carries both and upstream does not.
+
+```bash
+# What is published that should not be? Run BEFORE building the branch.
+LEAKS='^(\.private|docs|TODO\.md|CLAUDE\.md|AGENTS\.md|WARP\.md|\.claude|\.windsurf)$'
+gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | grep -E "$LEAKS" \
+  && echo "^^ delete these in this PR (git rm -r) — they are public right now"
+```
 
 ### Grep for inbound links before you drop a file
 
