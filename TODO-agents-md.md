@@ -28,6 +28,25 @@ fleet. They collapse to four rules, and **three are already fleet policy** in
 into sixteen files is sixteen places to drift. Link to `house-style.md` and move on.
 Write only what is true of *this* extension and could not be guessed from the fleet rules.
 
+> 🚨 **The table above is for YOU, not for the file you are writing. Do not reproduce it.**
+> This is not hypothetical: the first three `AGENTS.md` written from this brief — airbuddy,
+> tesla-energy, get-app-icon — *each independently* enumerated those three rules and then
+> wrote a sentence saying "they are not restated here." Three agents, same self-contradiction,
+> caught by Codex in all three. The earlier draft of this brief listed the rules and then said
+> "don't restate them," and every reader copied the list rather than obeying the instruction.
+>
+> The only acceptable form is a bare pointer with no enumeration:
+>
+> ```markdown
+> Fleet-wide conventions live in
+> `/Users/messina/.../plugins/raycast-extensions/reference/house-style.md` and are not
+> restated here.
+> ```
+>
+> If you have named `any`, `Preferences`, `Arguments`, `Toast.Style.Failure` or "Copy Error"
+> anywhere in the file as a *rule to follow*, you have made this mistake. Naming them to
+> explain something specific to this extension is fine — restating the fleet rule is not.
+
 The fourth rule — reader's "don't cast DOM elements from linkedom" — is genuinely
 extension-specific. That is the shape to aim for.
 
