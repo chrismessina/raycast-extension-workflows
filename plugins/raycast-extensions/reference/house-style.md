@@ -460,8 +460,54 @@ copy the **user reads** (they're fine in `logger.*` debug output, which no user 
 `getPreferenceValues().verboseLogging` internally, so an extension that adopts it
 **must** expose a preference named **exactly `verboseLogging`**, type `checkbox`.
 This is not a free naming choice — a differently-named toggle silently does nothing.
-(Present in all 7 logger-using extensions: `bookface`, `digger`, `fathom`,
-`ios-apps`, `parallel-web-tools`, `reader`, `tesla-energy`.)
+
+#### `[both]` The copy is fixed too — type this block verbatim
+
+Decided 2026-09-05. The `name` is what the logger reads; the three copy fields are what
+the user reads, and they were fleet-wide drift: **3 different titles and 11 different
+label/description pairs across 11 extensions**, for one toggle that does exactly one
+thing everywhere. Raycast 2 renders `title` as the settings group heading, so an
+extension with `title: "Verbose Logging"` puts a jargon term where every other row shows
+plain language.
+
+```json
+{
+  "name": "verboseLogging",
+  "title": "Debug Logging",
+  "label": "Enable extra diagnostics in the console",
+  "description": "Show detailed logs in the console for debugging.",
+  "type": "checkbox",
+  "required": false,
+  "default": false
+}
+```
+
+- **Do not reword it per extension.** "Enable detailed logging for debugging Tesla API
+  calls" is not more helpful than the standard line; it is one more string to maintain and
+  it makes the fleet look hand-assembled. If an extension genuinely needs to say something
+  extra — that values are redacted, say — that belongs in its README, not the toggle.
+- **`title` is a group heading, not a row label.** Several extensions had the label text in
+  `title` and left `label` doing the work, which renders the toggle under a heading that
+  repeats it.
+- **Keep the trailing period on `description`, and none on `label`.** That is what the
+  rendered UI looks right with; mixed punctuation across rows is visible in Settings.
+- The description says *console*, not *Raycast console* or *logs* — it is accurate for
+  `ray develop` and for the packaged extension both.
+
+**Audit:**
+
+```bash
+jq -r '(.preferences // [])[] | select(.name=="verboseLogging")
+  | if (.title=="Debug Logging"
+        and .label=="Enable extra diagnostics in the console"
+        and .description=="Show detailed logs in the console for debugging.")
+    then "ok" else "DRIFT: \(.title) / \(.label) / \(.description)" end' package.json
+```
+
+This is UI copy in `package.json`, so it ships — changing it is a Store PR. Fold it into
+the next PR that touches the extension rather than opening one that changes three strings.
+In an extension you do **not** author, leave it alone; the standard is Chris's house style,
+not a fix to someone else's product.
 
 ### `[both]` (conditional) Prefer `@chrismessina/raycast-kit` for failure toasts and count copy
 
