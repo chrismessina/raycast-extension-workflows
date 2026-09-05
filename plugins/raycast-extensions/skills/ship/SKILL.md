@@ -379,6 +379,42 @@ Run before PR. Each layer is gardening, not engineering:
    - **Disable the Impeccable design hook first** (`/impeccable hooks off`) so a design false-positive can't masquerade as a house-style violation during this audit — it can't see `@raycast/api` UI (see the *Environment / tooling* rule in `reference/house-style.md`). Confirm `.impeccable/config.json` is gitignored so it never lands in the Store PR.
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
+   - 🚨 **`AGENTS.md` and `CONCEPTS.md` currency — self-authored extensions only, and scoped
+     to what THIS diff touched.** They ship to the monorepo, so a stale claim in them is
+     published guidance that a contributor will act on. They also drift silently: nothing
+     compiles them, no gate reads them, and the release that invalidates a line is exactly
+     the release too busy to notice.
+
+     **Scope it to the diff — this is not a re-audit.** For each claim those files make
+     about an area the branch changed, check it still holds:
+
+     ```bash
+     # Which documented areas did this branch touch?
+     git diff --name-only origin/main...HEAD -- src/
+     # Every path, symbol, and npm script the docs name must still exist.
+     grep -ohE '`src/[A-Za-z0-9_./-]+`|`[a-z][A-Za-z0-9_]+\(\)`|npm run [a-z-]+' AGENTS.md CONCEPTS.md 2>/dev/null | sort -u
+     ```
+
+     Two failure modes, both observed:
+     - **A named symbol moved or changed meaning.** Cheap to check, and a wrong pointer sends
+       a contributor to the wrong file.
+     - **A behavioural claim quietly became false.** This is the expensive one and no grep
+       finds it — the doc still names real symbols while describing what they used to do.
+       Re-read the claims about the area you changed against the code you just wrote.
+
+     **Verify a claim by printing the line back, not by confirming the path resolves.** A
+     citation can be in range, resolve clean, and point at unrelated code.
+
+     A doc-only edit stays in `ship`. If the drift is large, or the docs cover areas well
+     beyond this diff, that is `/compound-engineering:ce-compound-refresh` — run it before
+     opening the PR rather than widening the submission run. **Never invent a claim to fill
+     a gap**: if you cannot verify what the current behaviour is, delete the stale line and
+     say so in the report.
+
+     *(2026-09-04, `digger`: writing `AGENTS.md` fresh took five adversarial passes, four of
+     which found a false claim — including two the author introduced while fixing the first
+     one, both copied from a code comment that was itself wrong. Docs about async ownership
+     and error semantics do not survive a release untended.)*
    - **README structure — self-authored extensions follow [`reference/readme-template.md`](../../reference/readme-template.md).**
      Centered top-matter (H1, badge row, one-sentence tagline, nav), then Features /
      Requirements / Quick Start / Usage / Development / Tech Stack. **Report gaps; do not
@@ -652,6 +688,10 @@ returned — paste the actual output, don't assert it:
       *(2026-09-02, `digger`: `.private/docs/` — 4 internal notes — had been public since an earlier
       release and no gate saw it. The same session's first push would separately have added
       `extensions/threads/TODO.md` and an eslint upgrade guide to the monorepo.)*
+- [ ] **`AGENTS.md` / `CONCEPTS.md` still true for what this diff changed** (self-authored
+      only). Named paths, symbols, and scripts still exist, AND the behavioural claims about
+      the touched area still hold — verified by reading the cited lines, not by confirming
+      paths resolve. Large drift → `/compound-engineering:ce-compound-refresh` before the PR.
 - [ ] screenshot count ≤ 6 (`ls metadata/*.png | wc -l`)
 - [ ] **external effects were verified at their destination** — for any action in the diff whose
       result leaves the extension (clipboard/paste, a written file, a Finder reveal, an `open`
