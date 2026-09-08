@@ -12,6 +12,13 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
   ```
 - **Last verified:** 2026-07-13 against `@raycast/eslint-plugin` (shipped with `@raycast/eslint-config` 2.2.0). The 2026-06-19 snapshot had **five wrong macOS bindings** (`CopyName`, `CopyPath`, `Duplicate`, `Pin`, `Remove`) — a wrong table causes the exact mis-mapping this file exists to prevent, so regenerate rather than trusting prose docs.
 - **Drift guard:** re-run the command above whenever `@raycast/eslint-config` is bumped; if the set changed, update the table and bump "last verified".
+- 🚨 **Answering a collision finding? Read the table below BEFORE the vendor's docs page.** This file exists for authoring, but the expensive failure is *review*: a reviewer reports "these two actions share a shortcut", you go read the value on `developers.raycast.com`, and it is wrong. Verified 2026-09-07: that page documents `Common.Pin` as ⌘⇧P; the shipped runtime binds ⌘ . — as the `Common.Pin` row in the table below has said all along. Complying cost a user-visible shortcut change to correct code, then a revert. Two separate automated reviewers filed the same finding from the same wrong page, which reads as corroboration and is one source counted twice.
+  Confirm a value against an artifact, never the docs — either `COMMON_SHORTCUTS` above, or the runtime the app actually loads:
+  ```bash
+  grep -oE 'Pin:\{macOS:\{[^}]*\}[^}]*\}' \
+    "/Applications/Raycast.app/Contents/Resources/macos-app_RaycastDesktopApp.bundle/Contents/Resources/api/node_modules/@raycast/api/index.js"
+  ```
+  The npm `@raycast/api` ships types only and has no `index.js`, so looking there finds nothing and feels like confirmation. Why the docs are wrong and stay wrong: `docs/solutions/workflow-issues/wrong-vendor-docs-manufacture-review-findings.md`.
 
 ---
 

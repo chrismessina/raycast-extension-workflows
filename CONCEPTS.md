@@ -60,3 +60,13 @@ A mirror is **downstream of the published copy, never authoritative over it**: t
 The recorded snapshot of what the published copy held at the last reconcile, which gives a mirror sync a *third* reference point beyond "upstream now" and "mine now". Without it a difference is uninterpretable — the sync can see that two copies disagree but not which side moved — so it can only overwrite blindly or refuse.
 
 With a baseline, a difference resolves into four cases: neither side moved (nothing to do), only upstream moved (take theirs), only the mirror moved (keep local), or both moved — the one genuinely ambiguous case, which a sync must refuse rather than resolve. The baseline is only as good as its freshness: an unrefreshed baseline still permits the first three verdicts wherever the two copies happen to agree, while quietly reclassifying ordinary upstream-only edits as both-sides ambiguity, because the mirror's *own* copy has drifted from a snapshot that stopped tracking it. **A sync that reports no work is therefore not evidence that the baseline advanced** — the reconcile and the recording are separate events, and a run with nothing to copy is exactly the run most likely to leave the snapshot behind.
+
+## Review
+
+### Laundered finding
+
+A review finding whose premise is a value the reviewer read from a vendor's published documentation rather than from the shipped artifact. It arrives with the authority of a second opinion and none of the evidence, and two reviewers reporting it is one wrong source counted twice rather than corroboration. The tell is that you cannot reproduce the problem it describes. See `docs/solutions/workflow-issues/wrong-vendor-docs-manufacture-review-findings.md`.
+
+### Remedy premise
+
+The claim about the world that a review finding's implied fix rests on — "this log line is emitted when the download starts", "this field means the package is a cask". A finding proves the current code wrong; it carries no evidence that the fix it implies is right, so the premise is checked separately and against the source of truth, not inferred from the finding's correctness. See `docs/solutions/workflow-issues/verify-the-remedy-not-just-the-finding.md`.

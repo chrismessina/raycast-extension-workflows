@@ -160,5 +160,8 @@ Same conclusion. The difference is that the second one can be checked.
   — the technical learning from the same PR; this doc is its ship-side half
 - [Self-review does not catch diagnostic errors](/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/workflow-issues/self-review-does-not-catch-diagnostic-errors.md)
   — same root cause, wrong theory held by the author instead of the reviewer
+- [Verify the remedy a review implies, not just the finding](/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/workflow-issues/verify-the-remedy-not-just-the-finding.md)
+  — extends §1 to a remedy that was already built and shipped, and amends §6: the cheap
+  premise check belongs on every finding, not only the last
 - [raycast/extensions#30311](https://github.com/raycast/extensions/pull/30311) — merged
   2026-08-18, published to https://raycast.com/loris/context7
