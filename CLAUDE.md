@@ -12,9 +12,16 @@ extension repos current against `raycast/extensions`. Neither is a Raycast exten
 no `ray build` here, and `package.json` is `private: true` with Prettier as its only dependency.
 
 It is also, since 2026-08, the durable home for **learnings written out of extension repos**
-(`docs/solutions/`), because those repos gitignore their own `docs/` to keep agent notes out of
-Store PRs. A learning that lives only in an extension checkout has no git copy and has been
-lost that way before.
+(`docs/solutions/`), for two reasons. A learning that lives only in an extension checkout has no
+git copy and has been lost that way before. And an extension repo is the one place a learning
+must **not** go: `ray publish` copies the extension directory wholesale, honouring only the
+committed `.gitignore`, so a `docs/solutions/` written there ships into `raycast/extensions` on
+the next publish.
+
+**Do not rely on the extension repo ignoring `docs/`.** An earlier version of this note claimed
+they do; swept 2026-09-06, exactly **1 of 37** repos with a `.gitignore` actually lists it
+(`raycast-fetch`). Treat every extension checkout as publishing anything you leave in it, and
+write the learning here instead — which also keeps it beside the docs it cross-references.
 
 ## The README's status block is stale — trust the files
 

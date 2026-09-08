@@ -52,7 +52,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | `node` | 22 | — | local toolchain is v22.22.3 |
 | `@raycast/api` | **`^2.1`** | — | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0, first with `Form` + `Grid`) and `context7` (first upstream, merged 2026-08-25). **Floor moved 1.x → `^2.1` on 2026-08-27, Chris confirmed** — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
-| `@chrismessina/raycast-logger` | `^1.4` | — | `ios-apps` (1.4.0), `context7` (1.4.0); **required at `^1.4` before `@raycast/api` v2** — see below |
+| `@chrismessina/raycast-logger` | `^1.4` | `^1.5` (unpublished) | `attio`, `digger`, `ios-apps`, `karakeep`, `reader` (all 1.4.0); **required before `@raycast/api` v2**; bulk bump waits for 1.5 — see below |
 | `@chrismessina/raycast-kit` | `^0.1.4` | — | `claude-artifacts` (0.1.4); **required at `^0.1.4` before `@raycast/api` v2** — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
@@ -129,13 +129,18 @@ trigger.** One guide trigger is still unmet: `developers.raycast.com/migration/v
 to 404, so the migration below remains verified by diffing `.d.ts` files, not by following
 docs.
 
-> 📌 **Resolved 2026-08-27: the leading edge moved to `^2.1`, the floor did not move.** Chris
-> confirmed the target; the floor is a separate question and is left at `^1.104` deliberately.
-> **The floor is descriptive — "the dominant cluster, safe everywhere" — not a target.**
-> Moving it to `^2.1` while 33 of 41 extensions sit on 1.104 would reclassify all 33 as
-> *stranded* by this file's own definition, putting them in the same bucket as `craftdocs`
-> (`^1.47`) and `quick-call` (`^1.80`), which are genuinely three majors behind. That would
-> make the Stranded table lie and manufacture migration pressure nobody asked for.
+> 📌 **SUPERSEDED 2026-09-06 — the floor IS `^2.1`.** This callout recorded an interim
+> position (floor left at `^1.104`, leading edge `^2.1`) that Chris overrode the same day it
+> was written; the operative rule is the one above at "The floor moved to `^2.1` on
+> 2026-08-27": the floor is *aspirational* for this row only, and a 1.x extension is
+> *below target*, not *stranded*. The reasoning below is kept because the stranded-vs-below-
+> target distinction it argues for is exactly what the operative rule adopts.
+>
+> ~~The floor is a separate question and is left at `^1.104` deliberately. The floor is
+> descriptive — "the dominant cluster, safe everywhere" — not a target. Moving it to `^2.1`
+> while 33 of 41 extensions sit on 1.104 would reclassify all 33 as stranded by this file's
+> own definition, putting them in the same bucket as `craftdocs` (`^1.47`) and `quick-call`
+> (`^1.80`), which are genuinely three majors behind.~~
 >
 > Still true, and worth weighing before a broad migration: nothing in the fleet has exercised
 > v2's `Form` or OAuth paths, and the first upstream adopter was a fork Chris contributes to
@@ -154,8 +159,8 @@ than 1.x: `2.0.4` and `2.0.5` both landed on 2026-08-21, against `1.104.25` on 2
 That is the "1.x is winding down" signal the hold was waiting for. Note the other two
 re-assess triggers are **still unmet** — `developers.raycast.com/migration/v2` continues
 to 404, and no upstream extension in `raycast/extensions` is on 2.x — so an adopter is
-still the first one there, and any Store-review or CI surprise is theirs to debug. That is
-why the floor did not move with the leading edge.
+still the first one there, and any Store-review or CI surprise is theirs to debug. *(This
+paragraph predates the 2026-08-27 floor move; the floor is now `^2.1`, see above.)*
 
 > ⛔ **Prerequisite: `@chrismessina/raycast-logger` must be `^1.4.0` first.** Through
 > 1.3.0 the logger declared `peerDependencies: { "@raycast/api": "^1.0.0" }`, which does
@@ -174,12 +179,13 @@ why the floor did not move with the leading edge.
 is in `change-case`, which is a fork (author `erics118`), and it is a deprecation, not a
 removal. `raycast-reader`'s `commandName` is its own local prop, unrelated to the API.
 
-**Move the FLOOR to `^2.1` when** 2.x becomes the dominant cluster in the fleet — i.e. when
-migrating the *remaining* 1.x extensions is the smaller job. Not before: the floor follows
-the fleet, it does not lead it. (Both original triggers are now spent — upstream extensions
-landed on 2.x on 2026-08-25, and `developers.raycast.com/migration/v2` still 404s.)
+~~**Move the FLOOR to `^2.1` when** 2.x becomes the dominant cluster.~~ **Done 2026-08-27**
+— the floor moved ahead of the cluster, deliberately (see the top of this section). What
+remains is the migration cadence: move a 1.x extension when it is being worked on anyway,
+and do not bulk-migrate. (`developers.raycast.com/migration/v2` still 404s; migrations are
+verified by diffing `.d.ts`, not by following docs.)
 
-### `@chrismessina/raycast-logger` — floor is `^1.4`, but the fleet bump is deliberately held
+### `@chrismessina/raycast-logger` — floor is `^1.4`; the fleet bump targets 1.5 and waits for it to publish
 
 First-party, so the gate behaves differently from the third-party rows: there is no
 upstream to wait on, and a fix here reaches extensions only when each one regenerates its
@@ -195,23 +201,33 @@ to `^1.x` still resolves to whatever its lockfile says until someone reinstalls.
    query parameters. 1.4.0 adds v2 support and stops the redaction heuristic masking REST
    paths, filesystem paths, and Docker image names as base64.
 
-**The bulk rollout is on hold (2026-08-24, Chris's call).** Twelve of the thirteen
-extensions that use the logger sit below the floor; `ios-apps` is the only one at `^1.4`.
-They are *not* being migrated to `^1.4` one at a time, because logger 2.0 —
-the record/transport model — is the next release, and bumping the fleet twice in quick
-succession is churn nobody benefits from. The plan is to move them to 2.0 directly.
+**The hold is lifted, but the target is 1.5, which is not published yet (2026-09-06,
+Chris's call).** Seven of the eleven extensions that use the logger sit below the floor
+(`brew`, `threads-client`, `fetch`, `fly`, `tesla-energy`, `bookface`, `fathom`); four are
+at `^1.4` (`digger`, `ios-apps`, `karakeep`, `reader`). The 2026-08-24 hold waited for
+logger 2.0 so the fleet would not be bumped twice; it was lifted because the seven are
+still on the redaction that had the critical `toJSON` fail-open, and for a default-config
+consumer both bumps are lockfile-only. **1.5.0 adds opt-in strict redaction** (a
+per-extension `strictRedaction` preference that masks URL query strings) and changes no
+default behavior.
 
 **So, when working in an extension that uses the logger:**
 
-- Below `^1.4` and *not* touching `@raycast/api` v2 → **leave it.** The hold is
-  intentional; this is not a stranded extension to rescue. It is not "hygiene" here.
-- Moving to `@raycast/api` v2 → **bump the logger to `^1.4` first.** That is a hard
-  prerequisite, not a preference.
-- Already at `^1.4` → nothing to do.
+- Below `^1.4` and 1.5.0 **is not on npm yet** → **leave it.** Do not bump to 1.4 as a
+  stopgap; the rollout goes straight to 1.5. **The one exception is the `@raycast/api` v2
+  migration in the next bullet**, which cannot proceed on ≤1.3.0 at all.
+- Below `^1.4` and 1.5.0 **is on npm** → bump to `^1.5.0`, stage only `package.json` and
+  `package-lock.json`, verify the lockfile moved. Procedure and the per-repo `code`-key
+  probe are in the logger repo's `TODO.md` rollout section.
+- Moving to `@raycast/api` v2 → **bump the logger first, to whatever is published**
+  (`^1.4.0` today, `^1.5.0` once it exists). That is a hard prerequisite, not a
+  preference, and it is the authorized exception to the no-stopgap rule above.
+- Already at `^1.4` → bump to `^1.5` opportunistically once published; not urgent.
 
-Revisit this whole row when logger 2.0 ships; it is a major with a new emission path
-(records and transports replacing direct `console` calls), so it will be a genuine
-migration with its own leading-edge tier, not a hygiene bump.
+When 1.5.0 publishes, change this row's floor to `^1.5`. Revisit the whole row again when
+logger 2.0 ships; it is a major with a new emission path (records and transports
+replacing direct `console` calls), so it will be a genuine migration with its own
+leading-edge tier, not a hygiene bump.
 
 ### `@chrismessina/raycast-kit` — the second v2 peer-range prerequisite
 
