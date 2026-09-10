@@ -301,6 +301,179 @@ Never `"Show in Folder"` — that has never been Raycast's string on either plat
 - **Audit:** `rg -n 'title[=:] *["`].*\b[Rr]eveal'` → any user-facing "Reveal" (not just "in Finder" — it hides in "Reveal Index File" and "Could Not Reveal…"); `rg -A3 '<Action\.ShowInFinder' | rg 'title='` → must return nothing. Internal identifiers (`revealOnComplete`, a `RevealInFinderAction` component) are not user-facing and don't block.
 - **Evidence:** 2026-08-10 fleet audit — 8 user-facing strings across 4 self-authored extensions said "Reveal" or "Open in Finder"; `raycast-reader` branched on platform but emitted "Show in Folder". Every `Action.ShowInFinder` already omitted `title`, so the component was the only thing getting Windows right. Two `raycast-fathom` toasts labelled "Open in Finder" called bare `open(filePath)` — the file opened in its default app and Finder never appeared. **2026-08-20:** v2.0.3 renamed the Windows default from "Show in Explorer" to "File Explorer", invalidating the hand-written wording this rule had recommended ten days earlier — evidence for the omit-`title` form over any literal.
 
+### `[both]` A completed file export offers Show in Finder AND Copy Path, both with shortcuts
+
+Writing a file and reporting only "Saved to Downloads" makes the user go find it. The
+success toast is the only moment the path is in hand, so it carries both ways to act on
+it — and both get a shortcut, because a toast action without one is reachable only by
+mouse before the toast expires.
+
+```ts
+const path = await downloadToFile(resource, format);
+toast.style = Toast.Style.Success;
+toast.title = `Saved ${basename(path)}`;
+toast.message = "in Downloads";
+toast.primaryAction = {
+  // Hand-written because a toast cannot use <Action.ShowInFinder>, which would
+  // supply the per-platform title for free. Verify the Windows half against the
+  // installed types — see the Show-in-Finder rule above.
+  title: process.platform === "darwin" ? "Show in Finder" : "File Explorer",
+  shortcut: { modifiers: ["cmd"], key: "o" },
+  onAction: () => showInFinder(path),
+};
+toast.secondaryAction = {
+  title: "Copy Path",
+  shortcut: { modifiers: ["cmd"], key: "c" },
+  onAction: async (t) => {
+    await Clipboard.copy(path);
+    t.message = "Path copied to clipboard";
+  },
+};
+```
+
+Three further requirements on the write itself, none of which the toast can paper over:
+
+- **Never overwrite.** `writeFile(path, contents, { flag: "wx" })` fails with `EEXIST`
+  rather than clobbering; catch that and try `name 2`, `name 3`, … the way the Finder
+  does. A plain `existsSync` check races its own write.
+- **`await mkdir(dir, { recursive: true })` first.** `~/Downloads` is not guaranteed to
+  exist, and without this every export on such a machine fails with a bare `ENOENT`.
+- **Failures go through `showFailureToast(error, { title })`**, never a hand-rolled
+  `Toast.Style.Failure` — the Copy-Error rule above applies to exports too, and an export
+  that fails with a generic message and the real error dropped into `console.error` is one
+  the user cannot report.
+
+- **Audit:** `rg -n 'writeFile' src/` → each hit needs the `wx` flag, a preceding `mkdir`,
+  and a success toast with both actions; `rg -n 'Toast.Style.Failure' src/` inside export
+  handlers must return nothing.
+- **Evidence:** 2026-09-08, `raycast-ios-apps` `use-export-favorites.ts` — a good
+  Show-in-Finder + Copy-Path toast (the source of this rule) paired with two hand-rolled
+  failure toasts carrying no Copy Error and discarding the error to `console.error`.
+  `raycast-digger` had the inverse: correct failure handling, but `open()` on the
+  containing directory instead of `showInFinder`, so the user landed in Downloads and had
+  to hunt for the file. **`use-export-favorites.ts` was brought up to this rule the same
+  day** (`showFailureToast` on both paths, `mkdir` + `wx` with Finder-style `name 2`
+  fallback); the toast that inspired the rule is unchanged. One correction learned in that
+  pass: the success toast must report `basename(actualPath)`, not the filename it *intended*
+  to write — with a collision fallback in place those differ, and the toast would otherwise
+  reveal a file that does not exist.
+
+### `[both]` A CSV export neutralises spreadsheet formulas, not just quotes
+
+RFC 4180 quoting — wrap in `"`, double the embedded `"` — is about *parsing*, and it does
+nothing about *execution*. Excel, Sheets and Numbers all evaluate a cell whose value begins
+`=`, `+`, `-`, `@`, or a leading tab or carriage return, **quoted or not**. Any column fed by
+a remote API is therefore an injection vector into the user's spreadsheet: an App Store title
+of `=HYPERLINK("http://evil","click")` exports as a live formula.
+
+Prefix the standard neutralising apostrophe, which spreadsheets strip on display, and do it in
+**one cell helper every column routes through** — per-field escaping is how the next column
+added forgets:
+
+```ts
+function csvCell(value: string): string {
+  const neutralised = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${neutralised.replace(/"/g, '""')}"`;
+}
+```
+
+Non-string columns need `String(value)` at the call site, not a widened signature — a numeric
+`price` that silently becomes `"undefined"` is the failure this catches. Apply it to the header
+row too if any header ever becomes dynamic.
+
+- **Audit:** `rg -n '\.replace\(/"/g' src/` → hand-rolled cell quoting with no formula guard;
+  any `join(",")` building a row from more than one differently-escaped expression.
+- **Evidence:** 2026-09-08, `raycast-ios-apps` `generateCSV` — correct RFC 4180 quoting on
+  `name` and `sellerName`, both straight from the iTunes API, with nothing stopping a leading
+  `=`. Found while fixing the export rule above, which the quoting had made *look* handled.
+
+### `[both]` A fenced code block in `Detail` markdown carries a language tag
+
+Raycast's markdown renderer colours fenced code by language. An untagged fence renders as
+flat monospace, which is the difference between a 17KB `apple-app-site-association` you
+can read and a grey wall you cannot.
+
+```ts
+// Not: `# ${title}\n\n\`\`\`\n${body}\n\`\`\``
+const language = inferLanguage(name, contentType);   // "json" | "xml" | "html" | ""
+markdown = `# ${title}\n\n\`\`\`${language}\n${body}\n\`\`\``;
+```
+
+Derive the tag from the Content-Type first and the filename second; emit an empty string
+when neither settles it, since a wrong tag colours the block as the wrong language.
+
+**And size the fence to the body.** A fixed three backticks is closed early by any
+resource that itself contains ```` ``` ````, after which the remainder renders as
+Markdown — headings, bold, swallowed indentation. Remote content is exactly where this
+happens:
+
+```ts
+const longestRun = [...text.matchAll(/`+/g)].reduce((max, m) => Math.max(max, m[0].length), 0);
+const fence = "`".repeat(Math.max(3, longestRun + 1));
+```
+
+- **Audit:** `rg -n '\\`\\`\\`' src/` → any fence built into a markdown string needs both a
+  language slot and a computed length.
+- **Evidence:** 2026-09-08, `raycast-digger` `ResourceDetailView` — every fetched
+  well-known file, robots.txt and sitemap rendered untagged; JSON and XML were
+  indistinguishable grey. The fence-length half was found by adversarial review, on the
+  export path where a remote file's own backticks would have broken out of the block.
+
+### `[both]` A cache version is DERIVED from the cached shape, never hand-maintained
+
+Any extension that persists a typed payload — `LocalStorage`, `Cache`, a JSON file — has a
+version in its key so a shape change evicts stale entries. Hand-maintaining that version
+fails, and it fails silently: an entry written under the old shape simply lacks the new
+field, and an optional field's absence is indistinguishable from a real negative result.
+`tsc`, `ray build` and `ray lint` all pass, because the code is correct — it is the *data*
+that is from a previous era.
+
+Compute the version instead:
+
+```js
+// scripts/cache-schema.mjs — run from prebuild/predev, checked by prelint
+const hash = createHash("sha256")
+  .update(readFileSync("src/types/index.ts", "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "").replace(/\s+/g, " ").trim())
+  .digest("hex").slice(0, 10);
+writeFileSync("src/utils/cacheSchema.ts", `export const CACHE_SCHEMA = "${hash}";\n`);
+```
+
+```json
+"prebuild": "node scripts/cache-schema.mjs",
+"predev":   "node scripts/cache-schema.mjs",
+"prelint":  "node scripts/cache-schema.mjs --check"
+```
+
+```ts
+KEY_PREFIX: `myext_cache_${CACHE_SCHEMA}_`,
+```
+
+- **Strip comments before hashing.** Otherwise documenting a type evicts every user's
+  cache, and the mechanism becomes something people work around.
+- **Over-invalidating is the safe direction.** Hash the whole types file rather than
+  computing reachability from the cached root: a needless eviction costs one refetch,
+  a missed one costs a false claim rendered as fact for the whole TTL.
+- **Commit the generated file** and gate it in `prelint`, so a stale fingerprint fails the
+  build rather than shipping.
+- **Belt and braces at the point of use.** Where a merge or a render can encounter an old
+  record, prefer the value that is actually populated over the one that merely arrived
+  first. That fixes the class independently of the storage layer having been correct.
+
+**The general rule this is an instance of:** when edit A is only correct if someone also
+makes unrelated edit B, that pair is a latent defect no matter how well it is documented —
+a checklist item is just one more chance to forget. Derive B from A, or make the
+inconsistent state unrepresentable where it is consumed.
+
+- **Audit:** `rg -n 'KEY_PREFIX|CACHE_VERSION|schemaVersion' src/` → any hand-typed
+  version literal beside a persisted typed payload.
+- **Evidence:** 2026-09-09, `raycast-digger` — `DiggerResult` gained `wellKnown`, then
+  `theme`, then `ThemeColor.hex`; the key bump was forgotten all three times. Each
+  produced a section confidently reporting an absence it had never established ("None
+  published", "No theme declared", a grid of colourless swatches), served from cache for
+  48h. The third instance also survived a cache bump by winning a merge, which is why the
+  point-of-use rule is listed above and not just the derivation.
+
 ### `[both]` Empty/error state copy: short title, one-line description, steps in the actions
 
 `List.EmptyView` (and `Toast`) copy follows one shape: an icon, a short imperative
@@ -583,7 +756,31 @@ bare ternary. 4 of 7 real shapes produce better copy.
 export — which pulls in `showError` → `toast.js` → `@raycast/api` — is **unloadable in plain
 Node**. The pure helpers have standalone subpaths: `@chrismessina/raycast-kit/errors`
 (`getErrorMessage`, `isAbortError`, `redactSecrets`), `@chrismessina/raycast-kit/plural`
-(`countOf`, `plural`).
+(`countOf`, `plural`), and `@chrismessina/raycast-kit/bytes` (`formatBytes`, `formatSpeed`,
+added in 0.2.0).
+
+> 🚨 **A subpath import needs `moduleResolution: Node16` — the fleet default cannot read
+> `exports` maps.** A scaffolded extension is `"module": "commonjs"` with no
+> `moduleResolution`, which is node10: it resolves packages by walking files on disk and
+> ignores the `exports` field entirely, so every subpath import fails to typecheck:
+>
+> ```
+> error TS2307: Cannot find module '@chrismessina/raycast-kit/bytes' or its corresponding
+>   type declarations.
+>   There are types at '…/dist/bytes.d.ts', but this result could not be resolved under
+>   your current 'moduleResolution' setting.
+> ```
+>
+> **The fix is `"module": "Node16"` + `"moduleResolution": "Node16"`** (what `store-updates`
+> and `fathom` already run — they are the two extensions using subpaths today, which is not a
+> coincidence). Do **not** reach for `"bundler"`: it is rejected outright unless `module` is
+> also `es2015`-or-later — `error TS5095` — so it is a bigger migration, not a smaller one.
+>
+> Verified on `threads` 2026-09-09: switching those two keys alone made every subpath resolve
+> with `tsc --noEmit` exit 0, `ray build` exit 0, `ray lint` exit 0, and **zero source
+> changes**. Migrate the tsconfig *before* adopting a subpath, not after — the failure looks
+> like a missing package rather than a resolver setting, and the tempting workaround (import
+> from the root instead) silently re-poisons a pure module with `@raycast/api`.
 
 The rule is **not** "subpaths in tests, root everywhere else." It is:
 
@@ -1030,7 +1227,7 @@ rule all live in [`readme-template.md`](./readme-template.md).
 
 ## Changelog
 
-### `[verify]` Never hand-invent a merge date — keep the `{PR_MERGE_DATE}` placeholder
+### `[both]` Never hand-invent a merge date — keep the `{PR_MERGE_DATE}` placeholder
 
 The newest, unreleased CHANGELOG entry keeps Raycast's literal `{PR_MERGE_DATE}`
 token; Raycast substitutes the real date when the Store PR merges. Do **not** guess
@@ -1042,6 +1239,13 @@ a date before merge. Entries follow `## [<Title>] - {PR_MERGE_DATE}` under a
 - **Audit:** `grep -c '{PR_MERGE_DATE}' CHANGELOG.md` — expect it only on the newest
   unreleased entry, never on an already-shipped one, and never a real date on an
   unmerged entry.
+
+> **Retagged `[verify]` → `[both]` on 2026-09-09.** As a `[verify]`-only rule this could
+> never fire when it was needed: `develop` is told to skip `[verify]` entries because they
+> are "`ship`'s read-only assertions" — but the CHANGELOG entry is *written* during
+> `develop`. So the placeholder got replaced with a real date at write time and nothing
+> checked it until `ship`, by which point Chris had already read the wrong date and fixed it
+> by hand. A rule about how to write something has to be tagged for the skill that writes it.
 
 ### `[both]` Changelog bullets are tweet-length and ordered by user benefit
 
