@@ -449,8 +449,20 @@ writeFileSync("src/utils/cacheSchema.ts", `export const CACHE_SCHEMA = "${hash}"
 KEY_PREFIX: `myext_cache_${CACHE_SCHEMA}_`,
 ```
 
-- **Strip comments before hashing.** Otherwise documenting a type evicts every user's
-  cache, and the mechanism becomes something people work around.
+- **Hash the transitive imports, not just the entry file.** A cached type almost always
+  reaches a union or interface defined elsewhere; hashing one file lets a rename there keep
+  the old key, and the stale value then misses the new lookup and throws at render.
+- **Strip comments with a scanner that respects string literals, not a regex.** A regex
+  truncates `type Url = "https://x"` at the `//`, so two different URLs hash identically —
+  the exact failure the mechanism exists to prevent. Emit a space for a block comment, or
+  `string/* n */` and `string /* n */` hash differently and reformatting evicts every cache.
+- **Keep a hand-bumped salt beside the hash.** A semantic correction with an unchanged
+  shape — a classifier that now returns "unavailable" where it returned "absent" — moves no
+  type and therefore no hash. One deliberate step for the case no derivation can see.
+- **Know what the hooks do NOT cover.** npm lifecycle scripts fire for `npm run build`, not
+  for `npx ray build`, which is what Raycast Store CI runs; and `predev` runs once, so a
+  `ray develop` hot reload keeps the old fingerprint. The gate that protects users is the
+  pre-commit lint, not the build.
 - **Over-invalidating is the safe direction.** Hash the whole types file rather than
   computing reachability from the cached root: a needless eviction costs one refetch,
   a missed one costs a false claim rendered as fact for the whole TTL.
