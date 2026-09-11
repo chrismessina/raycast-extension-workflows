@@ -23,6 +23,8 @@ Relevant when a Store PR draws review findings, when a submission behaves unexpe
 
 > **On a blocking finding from an automated reviewer:** a finding being correct does not make the remedy it implies correct, and a rating that will not clear creates pressure to ship *any* responsive change. Build the implied remedy, measure it against what you have, and report the number — including when it loses. See `docs/solutions/workflow-issues/answer-a-blocking-review-with-a-measurement.md`.
 
+> **Once the PR is open and Greptile posts a scored review, the round-by-round loop is its own skill:** [`greptile-loop`](../greptile-loop/SKILL.md) — triage per finding, re-publish with the secret holdout, and wait for the next round without resident background pollers (repeatedly killed under memory pressure on 2026-09-10; see its §4 for the bounded waiting mechanics).
+
 ## Pre-flight checklist (the "cake")
 
 Run before PR. Each layer is gardening, not engineering:
@@ -370,51 +372,110 @@ Run before PR. Each layer is gardening, not engineering:
    - **`raycast-kit` adoption — REPORT ONLY, never blocks.** On a **self-authored** extension,
      note failure toasts / `instanceof Error` ternaries / `${n} items`-style copy that could move
      to `showError` / `getErrorMessage` / `countOf`, as a one-line opportunity in your report.
-     Do **not** hand back to `develop` for this alone, do **not** open a PR for it alone, and
-     **never** flag it on a fork (personal dependency). The gate is the underlying rule, not the
-     dependency.
+     **Since 0.2.0, add hand-rolled byte formatters to that list** — a local
+     `bytes / 1024` / `toFixed(1) + " MB"` helper moves to `formatBytes` (and a transfer rate to
+     `formatSpeed`) from `@chrismessina/raycast-kit/bytes`. The floor is `^0.2.0`
+     (`reference/dep-gates.md`). Do **not** hand back to `develop` for this alone, do **not**
+     open a PR for it alone, and **never** flag it on a fork (personal dependency). The gate is
+     the underlying rule, not the dependency.
+
+     > **Two things to check when you see the kit at `^0.2.0` or a `bytes` adoption:**
+     > 1. **`tsconfig` must be `moduleResolution: Node16`** — subpath imports
+     >    (`@chrismessina/raycast-kit/bytes`) fail `TS2307` under the scaffold default
+     >    (commonjs + node10, which ignores `exports` maps). `"bundler"` is not the fix; it is
+     >    rejected unless `module` is `es2015`+ (`TS5095`).
+     > 2. **Displayed sizes change, and that is intended.** The kit defaults to base-1024;
+     >    most local copies divided by 1,000,000. A CHANGELOG line is not required for the
+     >    shift itself, but do not "restore" the old numbers with `{ base: 1000 }` — reserve
+     >    that for a figure shown next to something the user also reads in Finder.
    - Web-request extensions use `@chrismessina/raycast-logger`.
    - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one (see `reference/keyboard-conventions.md`).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
    - **Disable the Impeccable design hook first** (`/impeccable hooks off`) so a design false-positive can't masquerade as a house-style violation during this audit — it can't see `@raycast/api` UI (see the *Environment / tooling* rule in `reference/house-style.md`). Confirm `.impeccable/config.json` is gitignored so it never lands in the Store PR.
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
 3. **Weeding** — screenshots current (did we add a command/view?), README current, CHANGELOG updated.
-   - 🚨 **`AGENTS.md` and `CONCEPTS.md` currency — self-authored extensions only, and scoped
-     to what THIS diff touched.** They ship to the monorepo, so a stale claim in them is
-     published guidance that a contributor will act on. They also drift silently: nothing
-     compiles them, no gate reads them, and the release that invalidates a line is exactly
-     the release too busy to notice.
+   - 🚨 **FRESHEN `AGENTS.md` (and `CONCEPTS.md`) — every self-authored PR push, no
+     exceptions.** Not "if it looks stale": the doc is part of the deliverable, on the same
+     footing as the CHANGELOG entry. It ships to the monorepo, so a wrong claim is published
+     guidance a contributor will act on — and it drifts silently, because nothing compiles it,
+     no gate reads it, and the release that invalidates a line is exactly the release too busy
+     to notice. **Forks: skip entirely** — never add or edit your own `AGENTS.md` on an
+     extension you do not own.
 
-     **Scope it to the diff — this is not a re-audit.** For each claim those files make
-     about an area the branch changed, check it still holds:
+     **The procedure lives in the `verify-agents-md` skill** — the four assertions, the read
+     pass, and the failure modes. Load it rather than re-deriving them here; the summary below is
+     the ship-time contract, not the full method.
+
+     Run **both** passes. The first is cheap and mechanical; the second is the one that
+     actually finds things.
+
+     **Pass 1 — assertions. All four must come back clean:**
 
      ```bash
-     # Which documented areas did this branch touch?
-     git diff --name-only origin/main...HEAD -- src/
-     # Every path, symbol, and npm script the docs name must still exist.
-     grep -ohE '`src/[A-Za-z0-9_./-]+`|`[a-z][A-Za-z0-9_]+\(\)`|npm run [a-z-]+' AGENTS.md CONCEPTS.md 2>/dev/null | sort -u
+     # a) every repo path the doc names still exists
+     grep -ohE '`(src|assets|metadata|media)/[A-Za-z0-9_./-]+`' AGENTS.md CONCEPTS.md 2>/dev/null \
+       | tr -d '`' | sort -u | while read -r f; do [ -e "$f" ] || echo "MISSING PATH   $f"; done
+
+     # b) every npm script it names still exists
+     grep -ohE 'npm (run [a-z:-]+|test)' AGENTS.md CONCEPTS.md 2>/dev/null | sort -u \
+       | while read -r c; do s=${c#npm run }; s=${s#npm }
+           jq -e --arg s "$s" '.scripts[$s]' package.json >/dev/null 2>&1 || echo "MISSING SCRIPT $c"; done
+
+     # c) no ABSOLUTE machine paths — this file ships to a PUBLIC repo
+     grep -n '/Users/' AGENTS.md CONCEPTS.md 2>/dev/null && echo "^^ machine path would be PUBLISHED"
+
+     # d) every symbol it names in backticked call form still exists in src/
+     grep -ohE '`[a-z][A-Za-z0-9_]+\(\)`' AGENTS.md 2>/dev/null | tr -d '`()' | sort -u \
+       | while read -r sym; do rg -q "\b$sym\b" src || echo "MISSING SYMBOL $sym()"; done
      ```
 
-     Two failure modes, both observed:
-     - **A named symbol moved or changed meaning.** Cheap to check, and a wrong pointer sends
-       a contributor to the wrong file.
-     - **A behavioural claim quietly became false.** This is the expensive one and no grep
-       finds it — the doc still names real symbols while describing what they used to do.
-       Re-read the claims about the area you changed against the code you just wrote.
+     > **(c) is not a style rule.** These docs are cited by absolute path in Chris's *other*
+     > prose, because those files relocate — but an `AGENTS.md` bound for `raycast/extensions`
+     > sits **beside** the source it cites, so an absolute path there is both unnecessary and
+     > a leak. It publishes a machine path, which is the `HANDOFF.md` failure in miniature.
+     > Repo-relative throughout, and say so at the top of the file so the next editor knows why.
 
-     **Verify a claim by printing the line back, not by confirming the path resolves.** A
-     citation can be in range, resolve clean, and point at unrelated code.
+     **Pass 2 — read the claims about what this branch changed, against the code you just
+     wrote.** No grep finds this: the doc still names real symbols while describing what they
+     used to do. **Verify a claim by printing the cited line back**, not by confirming the path
+     resolves — a citation can be in range, resolve clean, and point at unrelated code.
 
-     A doc-only edit stays in `ship`. If the drift is large, or the docs cover areas well
-     beyond this diff, that is `/compound-engineering:ce-compound-refresh` — run it before
-     opening the PR rather than widening the submission run. **Never invent a claim to fill
-     a gap**: if you cannot verify what the current behaviour is, delete the stale line and
-     say so in the report.
+     Four failure modes, all observed:
+     - **A named symbol moved or changed meaning** — a wrong pointer sends a contributor to
+       the wrong file.
+     - **A behavioural claim quietly became false** — the expensive one. Widening an accepted
+       set is the classic shape: `threads` documented "requires `image/*` or `video/*`" for a
+       release whose headline feature was audio.
+     - **A path to something the branch DELETED.** Tooling migrations do this every time —
+       `threads` pointed at a `tools/` directory the vitest migration had removed.
+     - **A blanket search-and-replace that made a true line false.** Renaming a script across
+       the doc with `sed` turned "runnable check … hits the live site" into "`npm test` … hits
+       the live site", which is the opposite of true. **Re-read every line a bulk edit
+       touched.**
+
+     **Never invent a claim to fill a gap.** If you cannot verify what the current behaviour
+     is, delete the stale line and say so in the report.
+
+     > ⚠️ **`ce-compound-refresh` does NOT do this job — do not route here to it.** It audits
+     > the **learnings store** under `<root>/solutions/`, and touches `AGENTS.md` only to add a
+     > *discoverability pointer* to that store plus `CONCEPTS.md` vocabulary. It never checks
+     > whether `AGENTS.md`'s own claims are true. On an extension with no `docs/solutions/` —
+     > which is most of them — it finds an empty store and has nothing to refresh. Reach for it
+     > when the repo *has* a learnings store that needs auditing; reach for the two passes above
+     > when `AGENTS.md` needs to be true. (Corrected 2026-09-09: this section previously sent
+     > large drift to `ce-compound-refresh`, which would have refreshed the wrong file.)
+
+     A doc-only edit stays in `ship` — it needs no hand-back to `develop`. It does **not** skip
+     the adversarial review: a shipped `AGENTS.md` is inside the `codex-gate` (the docs-only
+     exemption was retired 2026-09-09), and a docs review is pointed at *truth, not style*.
 
      *(2026-09-04, `digger`: writing `AGENTS.md` fresh took five adversarial passes, four of
      which found a false claim — including two the author introduced while fixing the first
-     one, both copied from a code comment that was itself wrong. Docs about async ownership
-     and error semantics do not survive a release untended.)*
+     one, both copied from a code comment that was itself wrong. 2026-09-09, `threads`: the
+     diff-scoped version of this check passed — it caught one renamed script — while the file
+     still carried six false claims and an absolute machine path that had already shipped into
+     the open PR. Scoping to the diff is what let the rest through, which is why this step is
+     now unconditional.)*
    - **README structure — self-authored extensions follow [`reference/readme-template.md`](../../reference/readme-template.md).**
      Centered top-matter (H1, badge row, one-sentence tagline, nav), then Features /
      Requirements / Quick Start / Usage / Development / Tech Stack. **Report gaps; do not
@@ -575,6 +636,22 @@ Run before PR. Each layer is gardening, not engineering:
      defect this rule exists to prevent, and it is invisible on casual reading because
      the two headings look alike.
 
+     **INVIOLABLE: the submission NEVER carries a hardcoded date on its new entry —
+     `{PR_MERGE_DATE}` goes up, machines stamp it.** Two distinct bots touch that
+     placeholder AFTER submission, and knowing which did what is the difference between
+     a receipt and a false confession:
+     - **raycastbot stamps the placeholder ON THE PR BRANCH seconds before merging**
+       (verified 2026-09-09, attio #30910: bot commit "Update CHANGELOG.md" at
+       04:10:54Z, merge at 04:11:29Z). A review bot (Greptile) that then re-reads the
+       branch flags "Merge Date Is Hardcoded" — it is critiquing raycastbot's own
+       stamp. Answer with the commit-author receipt
+       (`gh api repos/raycast/extensions/pulls/<N>/commits --jq '.[].commit.author.name'`);
+       do NOT "fix" it, and do not accept blame for it.
+     - **Hardcoding a date yourself is only ever the POST-MERGE reconciliation step**
+       (copying the CI-stamped date back into the local/mirror copy so history matches
+       published). If a real date is about to go UP in a submission on the new entry,
+       stop — that is the violation.
+
      **The entries must describe what a USER notices, not how the code works.** A
      changelog line explaining an internal mechanism is stale the moment that mechanism
      is refactored, and nobody notices because the changelog isn't compiled. Rewrite each
@@ -675,11 +752,31 @@ returned — paste the actual output, don't assert it:
 - [ ] **dimensions** → `metadata/*.png` are 2000 × 1250; the icon is 512 × 512 (`sips -g pixelWidth
       -g pixelHeight`). Neither `ray build` nor `ray lint` checks this.
 - [ ] **no local-only working artifacts in the monorepo copy — and none already published.**
-      `.private/`, `docs/`, `TODO.md`, `CLAUDE.md`/`AGENTS.md`/`WARP.md`, `.claude/`, `.windsurf/`
-      belong in the standalone mirror, never in `extensions/<name>/`. A dot-prefix is not privacy:
-      everything under that path in `raycast/extensions` is world-readable. **Check the PUBLISHED
-      directory too, not just what you are about to copy** — an allow-list copy silently preserves
-      an earlier leak, because published and local agree and every staleness check passes clean:
+      `.private/`, `docs/`, `TODO.md`, `WARP.md`, `.claude/`, `.windsurf/` belong in the standalone
+      mirror, never in `extensions/<name>/`. A dot-prefix is not privacy: everything under that path
+      in `raycast/extensions` is world-readable. **Check the PUBLISHED directory too, not just what
+      you are about to copy** — an allow-list copy silently preserves an earlier leak, because
+      published and local agree and every staleness check passes clean:
+
+      > ✅ **`AGENTS.md` and `CONCEPTS.md` are NOT leaks on a self-authored extension — they SHIP.**
+      > They are repo documentation for whoever works on the extension next, which is exactly who
+      > reads `extensions/<name>/` in the monorepo. Chris confirmed this 2026-09-09 while shipping
+      > `threads`: *"because this is MY extension, I will ship AGENTS.md, and the tests."*
+      >
+      > This list previously named `AGENTS.md` as something that must never appear there, which
+      > **contradicted the very next checklist item** — the one requiring `AGENTS.md`/`CONCEPTS.md`
+      > to stay accurate *because* "they ship to the monorepo, so a stale claim in them is published
+      > guidance that a contributor will act on." Both cannot be true. The `LEAKS` regex below never
+      > listed `AGENTS.md` either, so the executable check already permitted what the prose forbade;
+      > only the prose was wrong.
+      >
+      > **`WARP.md` stays on the leak list, and the distinction is not the file extension.** A
+      > document describing the extension's architecture and conventions is for contributors and
+      > belongs upstream. A *working* note — branch state, next steps, machine paths, one agent's
+      > scratch — is private and does not, whatever it is called. `WARP.md` in practice is the
+      > latter, and `threads` had one published from an earlier release; that PR removed it.
+      >
+      > **Forks are the exception:** never add your own `AGENTS.md` to an extension you do not own.
       ```bash
       LEAKS='^(\.private|\.claude|\.windsurf|\.cursor|TODO\.md|CLAUDE\.md|WARP\.md)$'
       gh api "repos/raycast/extensions/contents/extensions/$EXT" --jq '.[].name' | grep -E "$LEAKS" \
@@ -688,10 +785,14 @@ returned — paste the actual output, don't assert it:
       *(2026-09-02, `digger`: `.private/docs/` — 4 internal notes — had been public since an earlier
       release and no gate saw it. The same session's first push would separately have added
       `extensions/threads/TODO.md` and an eslint upgrade guide to the monorepo.)*
-- [ ] **`AGENTS.md` / `CONCEPTS.md` still true for what this diff changed** (self-authored
-      only). Named paths, symbols, and scripts still exist, AND the behavioural claims about
-      the touched area still hold — verified by reading the cited lines, not by confirming
-      paths resolve. Large drift → `/compound-engineering:ce-compound-refresh` before the PR.
+- [ ] **`AGENTS.md` / `CONCEPTS.md` FRESHENED** (self-authored only; skip on forks). Both
+      passes of the freshening step ran: the four assertions came back clean — named paths,
+      named scripts, named symbols, and **no `/Users/` machine path**, which would be published
+      — and the behavioural claims about the area this branch changed were re-read against the
+      code, with cited lines printed back. Say what you changed in the doc; "no changes needed"
+      is a valid answer only if both passes actually ran. **Not** a job for
+      `/compound-engineering:ce-compound-refresh` — that audits the learnings store, not this
+      file.
 - [ ] screenshot count ≤ 6 (`ls metadata/*.png | wc -l`)
 - [ ] **external effects were verified at their destination** — for any action in the diff whose
       result leaves the extension (clipboard/paste, a written file, a Finder reveal, an `open`

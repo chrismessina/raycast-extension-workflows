@@ -4,7 +4,7 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
+- **Last verified:** 2026-09-09 for the `@chrismessina/raycast-kit` row (floor moved to `^0.2.0`); 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
   `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
@@ -53,7 +53,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | `@raycast/api` | **`^2.1`** | — | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0, first with `Form` + `Grid`) and `context7` (first upstream, merged 2026-08-25). **Floor moved 1.x → `^2.1` on 2026-08-27, Chris confirmed** — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
 | `@chrismessina/raycast-logger` | `^1.4` | `^1.5` (unpublished) | `attio`, `digger`, `ios-apps`, `karakeep`, `reader` (all 1.4.0); **required before `@raycast/api` v2**; bulk bump waits for 1.5 — see below |
-| `@chrismessina/raycast-kit` | `^0.1.4` | — | `claude-artifacts` (0.1.4); **required at `^0.1.4` before `@raycast/api` v2** — see below |
+| `@chrismessina/raycast-kit` | **`^0.2.0`** | — | `threads` (0.2.0, first adopter of the `bytes` subpath); floor moved 0.1.4 → 0.2.0 on 2026-09-09, Chris confirmed. Still satisfies the `@raycast/api` v2 peer prerequisite — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -229,11 +229,37 @@ logger 2.0 ships; it is a major with a new emission path (records and transports
 replacing direct `console` calls), so it will be a genuine migration with its own
 leading-edge tier, not a hygiene bump.
 
+### `@chrismessina/raycast-kit` — floor is `^0.2.0` (moved 2026-09-09)
+
+`0.2.0` adds a **`bytes` subpath** — `formatBytes` and `formatSpeed` — which is where the
+floor move comes from: it replaces a hand-rolled byte formatter in every extension that
+shows a download or file size, and those copies had already drifted apart.
+
+**Its default convention differs from most hand-rolled copies, deliberately.** The kit
+defaults to base-1024 with one decimal from KB up (developer-tooling convention, matching
+the rest of the fleet); a typical local copy divided by 1,000,000 and emitted only `KB`/`MB`.
+So adopting it *changes displayed numbers* — `4492333` renders `4.3 MB` where the local copy
+said `4.5 MB` — and gains `B`/`GB`/`TB`, which is the point: the old shape rendered 1.5 GB as
+`1500.0 MB`. Do **not** pass `{ base: 1000 }` to preserve old numbers; pass it only when the
+figure sits next to something the user can also read in Finder.
+
+> ⚠️ **The `bytes` subpath needs `moduleResolution: Node16`.** The scaffold default
+> (`module: commonjs`, no `moduleResolution`) is node10 and ignores `exports` maps, so the
+> import fails `TS2307` with a message about your `moduleResolution` setting. `"bundler"` is
+> **not** the fix — it is rejected unless `module` is `es2015`+ (`TS5095`). Set
+> `"module": "Node16"` + `"moduleResolution": "Node16"`, as `store-updates` and `fathom`
+> already do. Verified on `threads` 2026-09-09: those two keys alone, zero source changes,
+> `tsc`/`ray build`/`ray lint` all clean. Full rationale in `house-style.md`'s pure-TS
+> subpaths rule.
+
+Adopting the kit at `^0.2.0` also satisfies the `@raycast/api` v2 peer prerequisite below,
+so a v2 migration needs no separate kit bump.
+
 ### `@chrismessina/raycast-kit` — the second v2 peer-range prerequisite
 
-> ⚠️ **0.1.4 is committed and pushed but NOT YET ON npm** (2026-08-25 — blocked on npm auth).
-> Until it publishes, `npm install @chrismessina/raycast-kit@^0.1.4` will fail. Check the
-> registry before trusting this row: `npm view @chrismessina/raycast-kit version`.
+> 📌 **Resolved.** The 2026-08-25 note here said 0.1.4 was not yet on npm. It published, and
+> `0.2.0` is now the floor (see the section above). `npm view @chrismessina/raycast-kit
+> version` returned `0.2.0` on 2026-09-09.
 
 Same shape as the logger callout above, and it bit for the same reason: through **0.1.3**
 the kit declared `peerDependencies: { "@raycast/api": "^1.0.0" }`, which does not match 2.x.

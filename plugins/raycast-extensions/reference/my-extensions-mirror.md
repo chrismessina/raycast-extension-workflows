@@ -192,13 +192,48 @@ gh api "repos/chrismessina/raycast-<name>/commits?per_page=100" \
 
 **Porting checklist** (what actually varies per repo — everything else is verbatim):
 
-1. Copy the workflow, then restore that repo's **own cron minute** (staggered across
-   the fleet: 17/23/31/41/45/59) and its **`UPSTREAM_EXT_DIR`** override if set
-   (`raycast-reader` → `reader-mode`; the rest are empty).
+1. Copy the workflow, then restore that repo's **own cron minute** and its
+   **`UPSTREAM_EXT_DIR`** override if set (`raycast-reader` → `reader-mode`; the rest are
+   empty). **Enumerate the taken minutes rather than trusting a list here** — 19 were in use
+   by 2026-09-11, and any hardcoded set goes stale as the fleet grows:
+
+   ```bash
+   for d in ~/Developer/GitHub/chrismessina/raycast-*/.github/workflows/sync-from-upstream.yml; do
+     [ -f "$d" ] && grep -oE '"[0-9]+ [0-9]+ \* \* \*"' "$d"
+   done | sort -u
+   ```
 2. **Seed `.github/upstream-sync-state.json`** from the current upstream tree, or the
-   first run has no baseline. Assert a plausible file count (≥5) before writing it —
-   a truncated or failed fetch would otherwise seed an empty baseline, and every
-   local file then reads as "keep", masking real upstream changes indefinitely.
+   first run has no baseline.
+
+   > 🚨 **Do NOT seed from `git/trees/<sha>?recursive=1` — on `raycast/extensions` it comes
+   > back `"truncated": true`.** Verified 2026-09-11 seeding `raycast-threads`: the repo is
+   > far past GitHub's recursive-tree limit, so the response silently omits entries. A
+   > *partial* baseline is worse than an empty one and defeats the file-count assert below —
+   > it looks plausible, passes ≥5 easily, and every omitted file is primed to phantom-conflict
+   > on a later run.
+   >
+   > **Seed from a sparse checkout and read the blob SHAs with `git ls-tree`,** which cannot
+   > truncate and yields SHAs identical to GitHub's:
+   >
+   > ```bash
+   > WORK="$(mktemp -d)"; git -C "$WORK" init -q
+   > git -C "$WORK" remote add origin https://github.com/raycast/extensions.git
+   > git -C "$WORK" config core.sparseCheckout true
+   > git -C "$WORK" sparse-checkout init --cone
+   > git -C "$WORK" sparse-checkout set "extensions/$EXT"
+   > git -C "$WORK" fetch -q --depth 1 --filter=tree:0 origin main
+   > git -C "$WORK" checkout -q FETCH_HEAD
+   > [ -n "$(ls -A "$WORK/extensions/$EXT" 2>/dev/null)" ] || { echo "ABORT: empty baseline"; exit 1; }
+   > git -C "$WORK" ls-tree -r --format='%(objectname) %(path)' FETCH_HEAD -- "extensions/$EXT"
+   > ```
+   >
+   > **Then prove a seeded SHA is real**, rather than trusting the count: pick one file and
+   > compare its baseline entry against `git hash-object <file>` on your own copy. They match
+   > when the mirror is in sync, which is the state you are seeding from.
+
+   Assert a plausible file count (≥5) before writing it as a second line of defence — a failed
+   fetch would otherwise seed an empty baseline, and every local file then reads as "keep",
+   masking real upstream changes indefinitely.
 3. **Dry-run the compare before pushing.** On 2026-08-03 this surfaced that
    `raycast-digger` carries **27 local-only files** — a `@ianvs/prettier-plugin-sort-imports`
    pass (commit `5767aca`) that never shipped upstream. Verified formatting-only
