@@ -2,7 +2,26 @@
 
 Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, and guarantee no two actions collide within an ActionPanel. Cited by `develop` (build-time + house-style audit-fix ruleset) and `ship` (the conflict invariant is a mechanical audit gate).
 
-- **Authoritative source:** `COMMON_SHORTCUTS` in `node_modules/@raycast/eslint-plugin/dist/rules/prefer-common-shortcut.js` — this is the array the linter actually compares against, so it is ground truth in a way the prose docs are not. Regenerate the table with:
+- **🚨 The linter and the runtime now DISAGREE. The table below is the RUNTIME.** As of Raycast **2.3.0** / `@raycast/eslint-plugin` **2.2.0**, five constants bind different keys in the app than the linter believes. Rows marked ⚠️ are the diverging ones. There is no longer a single authoritative source — you need both, and which one you consult depends on the question you are answering:
+
+  | Question you are answering | Source to use |
+  |---|---|
+  | "What will the user actually press?" — collisions, review findings, UX | **The runtime** (the table below) |
+  | "Why did `prefer-common-shortcut` flag / rewrite this?" | **`COMMON_SHORTCUTS`** in the linter |
+
+  The divergence, verified 2026-09-11 (linter value → runtime value):
+
+  | Constant | `@raycast/eslint-plugin` 2.2.0 | Raycast 2.3.0 runtime |
+  |---|---|---|
+  | `Common.Duplicate` (macOS) | ⌘ ⇧ S | **⌘ D** |
+  | `Common.MoveDown` | ⌘ ⇧ ↓ / ctrl ⇧ ↓ | **⌘ ⌥ ↓ / ctrl alt ↓** |
+  | `Common.MoveUp` | ⌘ ⇧ ↑ / ctrl ⇧ ↑ | **⌘ ⌥ ↑ / ctrl alt ↑** |
+  | `Common.Remove` (macOS) | ⌃ D | **⌃ X** |
+  | `Common.RemoveAll` | ⌃ ⇧ D / ctrl ⇧ D | **⌃ ⇧ X / ctrl alt D** |
+
+  **What is established and what is not.** Established: these two artifacts, at these two versions, disagree today. *Not* established: that the split originated in 2.0, or which side moved. Raycast's v2 release note says *"Some common shortcuts have also changed on macOS to match Raycast 2.0"*, which makes "the app moved and the linter did not" the likely story — but it is inference, and the snapshots prove only the current disagreement. Do not cite a version as the origin.
+
+- **Linter source (for explaining lint behaviour, NOT for collisions):** `COMMON_SHORTCUTS` in `node_modules/@raycast/eslint-plugin/dist/rules/prefer-common-shortcut.js`. Regenerate it with:
   ```bash
   node --input-type=commonjs -e '
     const src = require("fs").readFileSync("node_modules/@raycast/eslint-plugin/dist/rules/prefer-common-shortcut.js","utf8");
@@ -10,10 +29,28 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
     for (const c of list) console.log(c.name, "|", c.macOS.modifiers.join("+")+"+"+c.macOS.key, "|", c.Windows.modifiers.join("+")+"+"+c.Windows.key);
   '
   ```
-- **Last verified:** 2026-07-13 against `@raycast/eslint-plugin` (shipped with `@raycast/eslint-config` 2.2.0). The 2026-06-19 snapshot had **five wrong macOS bindings** (`CopyName`, `CopyPath`, `Duplicate`, `Pin`, `Remove`) — a wrong table causes the exact mis-mapping this file exists to prevent, so regenerate rather than trusting prose docs.
-- **Drift guard:** re-run the command above whenever `@raycast/eslint-config` is bumped; if the set changed, update the table and bump "last verified".
+- **Runtime source (authoritative for the table below):** the shim the app actually loads —
+  ```bash
+  python3 - <<'EOF'
+  import re, json
+  p = "/Applications/Raycast.app/Contents/Resources/macos-app_RaycastDesktopApp.bundle/Contents/Resources/api/node_modules/@raycast/api/index.js"
+  s = open(p, encoding="utf8", errors="replace").read()
+  i = re.search(r'i\.Common=\{', s).end() - 1
+  d = 0
+  for j in range(i, len(s)):
+      d += (s[j] == '{') - (s[j] == '}')
+      if d == 0: break
+  for k, v in json.loads(re.sub(r'(\w+):', r'"\1":', s[i:j+1])).items():
+      f = lambda x: "+".join(x["modifiers"]) + "+" + x["key"]
+      print(f'{k:<16} {f(v["macOS"]):<28} {f(v["Windows"])}')
+  EOF
+  ```
+  **Extract all 17, not just the five known-diverging ones** — a grep pinned to today's divergence list cannot show you the sixth constant that moves next.
+  That directory has no `package.json`, so it carries no version of its own — it is whatever the installed Raycast is. Check the app instead: `plutil -p /Applications/Raycast.app/Contents/Info.plist | grep CFBundleShortVersionString`.
+- **Last verified:** 2026-09-11 against the Raycast **2.3.0.0** runtime shim and `@raycast/eslint-plugin` **2.2.0**. The 2026-07-13 snapshot was taken from the linter alone; by 2026-09-11 it no longer matched the app for five constants. (When the two diverged is not established — see above.) The 2026-06-19 snapshot before it had **five wrong macOS bindings** (`CopyName`, `CopyPath`, `Duplicate`, `Pin`, `Remove`). A wrong table causes the exact mis-mapping this file exists to prevent — regenerate from an artifact, never from prose docs.
+- **Drift guard:** re-run **both** commands above whenever `@raycast/eslint-config` is bumped **or the Raycast app updates**, and diff the two full 17-member lists against each other — watching only the linter cannot surface a runtime-only change, which is exactly how the 2026-09-11 split went unnoticed. If either set changed, update the table, refresh the divergence list, and bump "last verified".
 - 🚨 **Answering a collision finding? Read the table below BEFORE the vendor's docs page.** This file exists for authoring, but the expensive failure is *review*: a reviewer reports "these two actions share a shortcut", you go read the value on `developers.raycast.com`, and it is wrong. Verified 2026-09-07: that page documents `Common.Pin` as ⌘⇧P; the shipped runtime binds ⌘ . — as the `Common.Pin` row in the table below has said all along. Complying cost a user-visible shortcut change to correct code, then a revert. Two separate automated reviewers filed the same finding from the same wrong page, which reads as corroboration and is one source counted twice.
-  Confirm a value against an artifact, never the docs — either `COMMON_SHORTCUTS` above, or the runtime the app actually loads:
+  Confirm a value against an artifact, never the docs — and since 2026-09-11 that artifact must be **the runtime**, not `COMMON_SHORTCUTS` (the linter disagrees with the app on five constants; see the top of this file). The runtime the app actually loads:
   ```bash
   grep -oE 'Pin:\{macOS:\{[^}]*\}[^}]*\}' \
     "/Applications/Raycast.app/Contents/Resources/macos-app_RaycastDesktopApp.bundle/Contents/Resources/api/node_modules/@raycast/api/index.js"
@@ -37,6 +74,10 @@ Shortcut form is decided by TWO independent questions — do NOT conflate them:
 | macOS only | No | `{ modifiers: [...], key: "..." }` |
 | macOS + Windows | Yes | `Keyboard.Shortcut.Common.X` |
 | macOS + Windows | No | `{ macOS: {...}, Windows: {...} }` |
+| Windows only | Yes | `Keyboard.Shortcut.Common.X` |
+| Windows only | No | `{ modifiers: [...], key: "..." }` (ctrl/alt-based) |
+
+> **Windows-only (`platforms: ["Windows"]`)** is rare and absent from Chris's fleet, but it is a legal manifest. Audit its collisions against the **Windows** column of the table, not the macOS one — and note that `Common.Remove` / `Common.RemoveAll` / `Common.Duplicate` differ per platform, so a panel that is collision-free on macOS is not automatically collision-free there.
 
 > **Absent ≠ cross-platform.** 7 of Chris's 34 extensions have no `platforms` field (`at-profile`, `google-books`, `ios-apps`, `raycast-fly`, `wayback-machine`, `craftdocs`, `quick-call`). An auditor that defaults absent → cross-platform flags a bogus defect on every one of them.
 
@@ -51,17 +92,17 @@ Shortcut form is decided by TWO independent questions — do NOT conflate them:
 | `Common.CopyName` | ⌘ ⌥ C | ctrl alt C |
 | `Common.CopyPath` | ⌘ ⌃ C | alt shift C |
 | `Common.Save` | ⌘ S | ctrl S |
-| `Common.Duplicate` | ⌘ ⇧ S | ctrl shift S |
+| `Common.Duplicate` | ⌘ D ⚠️ | ctrl shift S |
 | `Common.Edit` | ⌘ E | ctrl E |
-| `Common.MoveDown` | ⌘ ⇧ ↓ | ctrl shift ↓ |
-| `Common.MoveUp` | ⌘ ⇧ ↑ | ctrl shift ↑ |
+| `Common.MoveDown` | ⌘ ⌥ ↓ ⚠️ | ctrl alt ↓ ⚠️ |
+| `Common.MoveUp` | ⌘ ⌥ ↑ ⚠️ | ctrl alt ↑ ⚠️ |
 | `Common.New` | ⌘ N | ctrl N |
 | `Common.Open` | ⌘ O | ctrl O |
 | `Common.OpenWith` | ⌘ ⇧ O | ctrl shift O |
 | `Common.Pin` | ⌘ . | ctrl . |
 | `Common.Refresh` | ⌘ R | ctrl R |
-| `Common.Remove` | ⌃ D | ctrl D |
-| `Common.RemoveAll` | ⌃ ⇧ D | ctrl shift D |
+| `Common.Remove` | ⌃ X ⚠️ | ctrl D |
+| `Common.RemoveAll` | ⌃ ⇧ X ⚠️ | ctrl alt D ⚠️ |
 | `Common.ToggleQuickLook` | ⌘ Y | ctrl Y |
 
 > **`Copy` and `CopyDeeplink` are the same keys** (⌘⇧C / ctrl⇧C). Choosing `CopyDeeplink` for a URL is a naming nicety, **not** a way to avoid colliding with a `Copy` in the same panel — it *is* a collision. Two copy actions in one panel means one of them needs a genuinely different binding.
@@ -92,13 +133,21 @@ Also note: the **first and second** actions in a panel auto-get the default prim
 
 **A clean `ray lint` is NOT evidence that a panel is collision-free.** Nothing in `@raycast/eslint-plugin` checks whether two actions in one ActionPanel resolve to the same shortcut. You must assert it by reading the resolved panel.
 
-What `prefer-common-shortcut --fix` actually does: it rewrites a shortcut whose **keys already equal** a `Common` member's into the named constant. That is a *spelling* change, not a behaviour change. So if `--fix` leaves you with two `Common.Copy` actions in one panel, **the collision was already there** — you had written `{cmd+shift+c}` by hand next to a `Common.Copy`, which is the same keys — and the fixer merely made it visible.
+What `prefer-common-shortcut --fix` actually does: it rewrites a shortcut whose **keys already equal** a `Common` member's — *as the linter's own table defines that member*, on **either** platform — into the named constant. **The rule never reads `package.json` `platforms`** (the string does not appear in the rule source at all), so it matches `macMatch || winMatch` regardless of what the extension actually targets.
+
+So if `--fix` leaves you with two `Common.Copy` actions in one panel, the collision was already there **only when your literal matched the constant on the platform you are auditing** — you had written `{cmd+shift+c}` by hand next to a `Common.Copy` on macOS, which is the same keys, and the fixer merely made it visible. **It is not always pre-existing.** A macOS-only extension with a literal `{ctrl+shift+c}` — ⌃⇧C on macOS, distinct from `Common.Copy`'s ⌘⇧C — gets rewritten anyway because it matches `Copy`'s *Windows* binding, and the action silently moves to ⌘⇧C and collides. The fixer created that one.
+
+> ⚠️ **`--fix` is a spelling change ONLY for the constants where the linter and the runtime agree.** For the five diverging constants at the top of this file it is a **behaviour change**: `--fix` sees a literal `{ modifiers: ["cmd","shift"], key: "s" }`, matches it to `Common.Duplicate` from the linter's table, and rewrites it — but on Raycast 2.3.0 `Common.Duplicate` binds **⌘D**. The action's actual shortcut silently moves. Same trap for `MoveUp`, `MoveDown`, `Remove`, `RemoveAll`.
+>
+> **So: never accept a `--fix` on one of those five without checking the runtime value.** And the inverse bites too — an action you bound to ⌘D sitting next to a `Common.Duplicate` is a genuine collision on 2.3.0 that *neither* the linter nor a pre-2.0 table will flag.
 
 > **This is the trap, and it is a trap about you, not about the tool.** Writing an explicit `{ modifiers: ["cmd","shift"], key: "c" }` *feels* like you invented a distinct shortcut. It isn't: it's `Common.Copy` spelled out. The `Common` table below is the only way to know whether the combo you just typed is already taken. **Check every custom shortcut against the table before assigning it** — that's what prevents the collision, not avoiding `--fix`.
 >
 > Learned the hard way, 2026-07-13, on `reader-mode`: assigned Summarize `⌘S` (= `Common.Save`, already on "Save as Markdown") and Copy URL `⌘⇧C` (= `Common.Copy`, already on "Copy as Markdown"). Two collisions, both mine. `--fix` canonicalised them and I briefly blamed the linter.
 
-**The one real `--fix` hazard** — narrow, and only on cross-platform extensions. `no-ambiguous-platform-shortcut` fires when `package.json` `platforms` has >1 entry AND a **single-form** shortcut carries **exactly one of `cmd` or `ctrl`** (`(hasCmd || hasCtrl) && !(hasCmd && hasCtrl)`) — so a bare `{cmd+s}` trips it just as `{ctrl+shift+c}` does. It's telling you *you* must declare both platforms.
+**Three distinct `--fix` hazards** — the two above (a diverging constant's binding moving; a cross-platform match rewriting a macOS-only literal) plus this one. All three are behaviour changes, not spelling changes, and none is announced as such.
+
+**Hazard 3 — the ambiguity warning gets silently answered for you.** `no-ambiguous-platform-shortcut` fires when `package.json` `platforms` has >1 entry AND a **single-form** shortcut carries **exactly one of `cmd` or `ctrl`** (`(hasCmd || hasCtrl) && !(hasCmd && hasCtrl)`) — so a bare `{cmd+s}` trips it just as `{ctrl+shift+c}` does. It's telling you *you* must declare both platforms.
 
 But `prefer-common-shortcut` matches a single-form shortcut against *either* platform's binding (`macMatch || winMatch`), so `--fix` rewrites it to the `Common` constant — adopting that member's **other**-platform binding too, a choice you never made — and **the ambiguity warning silently disappears with it.** If you see that warning, **answer it yourself; don't let `--fix` answer it for you.**
 
@@ -112,7 +161,7 @@ When `develop` rewrites shortcuts to `Common`:
 
 0. **Read `package.json` `platforms` FIRST.** Everything below depends on whether the extension is macOS-only or cross-platform. **An absent `platforms` field means macOS-only** — do not read it as cross-platform. An auditor that skips this step, or that defaults absent → cross-platform, mis-fires on Mac-only extensions and on the 7 extensions with no `platforms` field.
 1. **Infer semantics** from each `<Action>`'s `title`, `icon`, `onAction`, and surrounding JSX/comments.
-2. **If a `Common` member matches → replace with the `Common` constant** (and if it was a platform-explicit object wrapping that semantic, collapse it to the constant — `Common` is already platform-aware). **If NO `Common` matches → keep it custom, in the form `platforms` dictates:** plain `{ modifiers, key }` for macOS-only; `{ macOS: {...}, Windows: {...} }` (capital `Windows`) for cross-platform. Do NOT strip a platform-explicit object on a cross-platform extension — it's required there; a bare `cmd`-only shortcut breaks on Windows.
+2. **If a `Common` member matches → replace with the `Common` constant — unless that would collide.** The conflict invariant outranks the semantic map: when two actions in one resolved panel share a semantic (two generic copies, two removes), only **one** may take the `Common` constant. Give the other a genuinely distinct custom binding checked against the table; do not map both and do not leave the collision standing. **Where the two rules pull against each other, collision-freedom wins.** (and if it was a platform-explicit object wrapping that semantic, collapse it to the constant — `Common` is already platform-aware). **If NO `Common` matches → keep it custom, in the form `platforms` dictates:** plain `{ modifiers, key }` for macOS-only; `{ macOS: {...}, Windows: {...} }` (capital `Windows`) for cross-platform. Do NOT strip a platform-explicit object on a cross-platform extension — it's required there; a bare `cmd`-only shortcut breaks on Windows.
 3. **Leave truly-custom shortcuts as-is** (only normalizing the object *shape* per axis 2 above) — do not force a `Common` where no semantic match exists. Do not invent `Common` names beyond the 17 above.
 4. **Imports:** ensure `Keyboard` is imported from `@raycast/api`; extend the existing import line; introduce no unused imports.
 5. **Verify the conflict invariant** after rewriting — a semantic remap can create a new collision.
@@ -141,8 +190,26 @@ Enter on a hundred times.
 
 | Enter default changed? | Verdict |
 | --- | --- |
-| **Yes** — a new action became the first child | **FIX IT.** Append, and say so in the reply. |
+| **Yes** — a new action became the first child of a section that ALREADY SHIPPED | **FIX IT.** Append, and say so in the reply. |
+| **Yes**, but the section is new in this same release | **Keep it.** There is no prior default to unlearn — see below. |
 | **No**, and the shifted actions carry explicit shortcuts | **Keep it**, and reply with the reasoning so the bot learns the exception. |
+
+**A section shipping for the first time has no Enter default to change.** The rule exists to
+protect muscle memory, and nobody has any for a surface that did not exist before this PR. The
+comment text is identical either way, so the reviewer cannot tell — you have to, and the check is
+one call:
+
+```bash
+gh api "repos/raycast/extensions/pulls/$PR/files" --paginate \
+  --jq '.[] | select(.filename|test("<Component>")) | "\(.status)\t\(.filename)"'
+# status "added" on the component that sets the flag ⇒ new surface ⇒ decline the finding
+```
+
+*(2026-09-11, `digger` #30957: the finding fired on `sectionActionsFirst`, which was set by
+`Theme.tsx` and `WellKnown.tsx` — both `added` in that very PR, while all eight pre-existing
+sections kept their default untouched. It was complied with anyway, reverting a default the
+extension owner had asked for twice, and had to be restored in the next release. The
+`status: added` check above is what would have settled it in one call.)*
 
 **Two receipts, same rule, same repo:**
 
