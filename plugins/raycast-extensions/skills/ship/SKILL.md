@@ -298,10 +298,16 @@ Run before PR. Each layer is gardening, not engineering:
    **The re-run is the gate, not a formality.** If any dep changed and you did not re-run
    all three, step 0's result is stale and you cannot claim the build is green.
 
-   **`@raycast/api` must be current *within its major* — this blocks submission.**
-   The Store expects a current API. But "current" means the newest release on the major
-   line you are already on: **crossing a major is a migration, and migrations belong to
-   `develop`** (gated by `dep-gates.md`), never to a submission run.
+   **`@raycast/api` must be at or above the FLOOR — this blocks submission. It must NOT be
+   bumped to npm's newest.** npm publishes `@raycast/api` days ahead of the Raycast release that
+   can run it, and the Store refuses an extension whose declared API is newer than the user's app.
+   Submitting npm's latest-in-major is how you ship a release nobody can install — see the callout
+   in `dep-gates.md`. **Crossing a major is a migration and belongs to `develop`**, never here.
+
+   > 🚨 **Submit the version the extension was last EXERCISED at.** A bump here lands after all
+   > hands-on testing, so nothing runs it. If this gate reports the version is behind npm, that is
+   > information — acting on it requires re-running the extension in Raycast at the new version
+   > first. If it will not be re-run, do not bump.
 
    ```bash
    # Locate the lockfile: the extension dir normally, a parent under workspaces.
@@ -316,19 +322,25 @@ Run before PR. Each layer is gardening, not engineering:
    [ -n "$INSTALLED" ] || { echo "ABORT: @raycast/api not resolvable in $LOCK (workspace hoisting?)."; exit 1; }
 
    MAJOR="${INSTALLED%%.*}"
-   # Newest release on the SAME major — this is the blocking target.
+   # The FLOOR from dep-gates.md — the only blocking bar. Keep in sync with that table.
+   FLOOR="2.1.0"
+   # npm's newest on this major: ADVISORY ONLY. Never the blocking target — it is routinely
+   # ahead of every shipped Raycast, and submitting it breaks installs for all existing users.
    TARGET="$(npm view "@raycast/api@^$MAJOR" version 2>/dev/null | tail -1 | awk '{print $NF}' | tr -d "'")"
-   [ -n "$TARGET" ] || { echo "ABORT: could not reach npm — cannot prove the API is current."; exit 1; }
-   # Newest overall, for the advisory line only.
    NEWEST="$(npm view @raycast/api version 2>/dev/null)"
 
-   echo "lockfile=$INSTALLED  latest-in-major=$TARGET  newest-overall=$NEWEST  ($LOCK)"
+   echo "lockfile=$INSTALLED  floor=$FLOOR  latest-in-major=${TARGET:-unreachable}  newest-overall=${NEWEST:-unreachable}  ($LOCK)"
 
-   [ "$INSTALLED" = "$TARGET" ] || {
-     echo "BLOCKED: @raycast/api $INSTALLED is behind $TARGET on the v$MAJOR line."
-     echo "Run: npm install @raycast/api@$TARGET   then re-run tsc + build + lint."
+   # BLOCK only when genuinely stale — below the floor. sort -V avoids a semver dependency.
+   [ "$(printf '%s\n%s\n' "$INSTALLED" "$FLOOR" | sort -V | head -1)" = "$FLOOR" ] || {
+     echo "BLOCKED: @raycast/api $INSTALLED is below the $FLOOR floor."
+     echo "Bump to at least $FLOOR, RE-RUN the extension in Raycast at that version, then re-gate."
      exit 1
    }
+
+   # Behind npm is a NOTE, not a blocker. Acting on it requires re-running in Raycast first.
+   [ -z "$TARGET" ] || [ "$INSTALLED" = "$TARGET" ] || \
+     echo "NOTE: npm has $TARGET on the v$MAJOR line. Do NOT bump unless you will re-run the extension in Raycast at $TARGET — npm ships ahead of the app that can run it."
 
    # A newer MAJOR is information, not a blocker. Do not bump it here.
    [ "${NEWEST%%.*}" = "$MAJOR" ] || \

@@ -45,6 +45,34 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 > definition. Check the registry at submission time; if the table disagrees with `npm
 > view`, the registry wins and this row needs updating.
 
+> 🚨 **npm publishes `@raycast/api` ahead of the Raycast that can run it. Submitting npm's
+> latest-in-major breaks installs for everyone.** The Store refuses an extension whose declared API
+> is newer than the user's app — *"requires Raycast API v2.4.1. Update Raycast to install this
+> extension"* — and when npm is ahead of every shipped app, there is nothing to update to.
+>
+> **Scope of "the registry wins" above: it settles what EXISTS, never what to SUBMIT.** The table
+> going stale is a registry question. What is safe to ship is a runtime question, and npm cannot
+> answer it.
+>
+> **There is no readable API ceiling — do not try to compute one.** The app bundle exposes no
+> version key; the scaffolding template's range is a scaffold default, not a limit; other
+> extensions' manifests are ranges, not the versions they resolve to. An earlier version of this
+> callout offered two commands for this and neither answered the question.
+>
+> **The one decisive signal is that the version was actually RUN in the local Raycast.** If the
+> extension loaded under `npm run dev`, that app supports that version.
+>
+> **So: submit the version the extension was last exercised at.** A ship-time bump is safe only if
+> the extension is re-run in Raycast afterwards at the new version; if it will not be re-run, do not
+> bump. Staleness is still worth blocking — but against the FLOOR in the table below, never against
+> npm's newest.
+>
+> *(2026-09-15, `secret-browser-commands` 1.2.0: the currency check read 2.2.1 as BLOCKED against
+> npm's 2.4.1 — published the day before — and prescribed the bump. It landed after all hands-on
+> testing, so nothing ever ran it, and the merged Store release failed to install for every existing
+> user: "0/1 installed 1/1 failed". Reverted in 1.2.1. The gate was right that stale APIs get
+> bounced; it was wrong that npm defines current, and wrong to prescribe a version nobody had run.)*
+
 ## Gates
 
 | Dependency | FLOOR (safe everywhere) | LEADING EDGE (proven, opt-in) | Proven on |
