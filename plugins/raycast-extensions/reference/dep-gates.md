@@ -4,7 +4,7 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-09-09 for the `@chrismessina/raycast-kit` row (floor moved to `^0.2.0`); 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
+- **Last verified:** 2026-09-16 for the `@chrismessina/raycast-downloader` row (new); 2026-09-15 for the `@chrismessina/raycast-logger` row (floor moved to `^1.5`); 2026-09-09 for the `@chrismessina/raycast-kit` row (floor moved to `^0.2.0`); 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
   `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
@@ -80,8 +80,9 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | `node` | 22 | — | local toolchain is v22.22.3 |
 | `@raycast/api` | **`^2.1`** | — | 8 extensions on 2.x, incl. `store-updates` + `karakeep` (2.1.0, first with `Form` + `Grid`) and `context7` (first upstream, merged 2026-08-25). **Floor moved 1.x → `^2.1` on 2026-08-27, Chris confirmed** — see below |
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
-| `@chrismessina/raycast-logger` | `^1.4` | `^1.5` (unpublished) | `attio`, `digger`, `ios-apps`, `karakeep`, `reader` (all 1.4.0); **required before `@raycast/api` v2**; bulk bump waits for 1.5 — see below |
+| `@chrismessina/raycast-logger` | **`^1.5`** | — | `attio`, `digger`, `ios-apps`, `karakeep`, `reader` (all 1.4.0); `fathom` on 1.5.0; **required before `@raycast/api` v2**. Floor moved `^1.4` → `^1.5` on 2026-09-15, Chris confirmed, now that 1.5.0 is published |
 | `@chrismessina/raycast-kit` | **`^0.2.0`** | — | `threads` (0.2.0, first adopter of the `bytes` subpath); floor moved 0.1.4 → 0.2.0 on 2026-09-09, Chris confirmed. Still satisfies the `@raycast/api` v2 peer prerequisite — see below |
+| `@chrismessina/raycast-downloader` | `^0.1.0` | — | `fathom` (0.1.0, first and only adopter; published 2026-09-16). Declares `@raycast/api` `^1.0.0 \|\| ^2.0.0`, so it needs no companion bump for v2 — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -213,7 +214,7 @@ remains is the migration cadence: move a 1.x extension when it is being worked o
 and do not bulk-migrate. (`developers.raycast.com/migration/v2` still 404s; migrations are
 verified by diffing `.d.ts`, not by following docs.)
 
-### `@chrismessina/raycast-logger` — floor is `^1.4`; the fleet bump targets 1.5 and waits for it to publish
+### `@chrismessina/raycast-logger` — floor is `^1.5` (moved 2026-09-15)
 
 First-party, so the gate behaves differently from the third-party rows: there is no
 upstream to wait on, and a fix here reaches extensions only when each one regenerates its
@@ -229,30 +230,31 @@ to `^1.x` still resolves to whatever its lockfile says until someone reinstalls.
    query parameters. 1.4.0 adds v2 support and stops the redaction heuristic masking REST
    paths, filesystem paths, and Docker image names as base64.
 
-**The hold is lifted, but the target is 1.5, which is not published yet (2026-09-06,
-Chris's call).** Seven of the eleven extensions that use the logger sit below the floor
+**1.5.0 published, and the floor moved to it on 2026-09-15 (Chris confirmed).** The
+2026-09-06 note here said the target was 1.5 and it was not yet on npm; that is resolved.
+`npm view @chrismessina/raycast-logger version` returned `1.5.0`, and `fathom` installs it
+clean alongside `@raycast/api` 2.2.1. Seven of the eleven extensions that use the logger sit below the floor
 (`brew`, `threads-client`, `fetch`, `fly`, `tesla-energy`, `bookface`, `fathom`); four are
 at `^1.4` (`digger`, `ios-apps`, `karakeep`, `reader`). The 2026-08-24 hold waited for
 logger 2.0 so the fleet would not be bumped twice; it was lifted because the seven are
 still on the redaction that had the critical `toJSON` fail-open, and for a default-config
 consumer both bumps are lockfile-only. **1.5.0 adds opt-in strict redaction** (a
 per-extension `strictRedaction` preference that masks URL query strings) and changes no
-default behavior.
+default behavior. It also exports `redactString(s, { level })` directly, which is the
+supported way to scrub a server-supplied string before logging it — reach for that rather
+than hand-rolling a URL regex (`fathom` does this for Fathom's `failure_reason`).
 
 **So, when working in an extension that uses the logger:**
 
-- Below `^1.4` and 1.5.0 **is not on npm yet** → **leave it.** Do not bump to 1.4 as a
-  stopgap; the rollout goes straight to 1.5. **The one exception is the `@raycast/api` v2
-  migration in the next bullet**, which cannot proceed on ≤1.3.0 at all.
-- Below `^1.4` and 1.5.0 **is on npm** → bump to `^1.5.0`, stage only `package.json` and
-  `package-lock.json`, verify the lockfile moved. Procedure and the per-repo `code`-key
-  probe are in the logger repo's `TODO.md` rollout section.
-- Moving to `@raycast/api` v2 → **bump the logger first, to whatever is published**
-  (`^1.4.0` today, `^1.5.0` once it exists). That is a hard prerequisite, not a
-  preference, and it is the authorized exception to the no-stopgap rule above.
-- Already at `^1.4` → bump to `^1.5` opportunistically once published; not urgent.
+- Below the floor → bump to `^1.5.0`, stage only `package.json` and `package-lock.json`,
+  verify the lockfile moved. Procedure and the per-repo `code`-key probe are in the logger
+  repo's `TODO.md` rollout section. (The earlier "leave it until 1.5 publishes" hold is
+  retired — 1.5.0 is on npm.)
+- Moving to `@raycast/api` v2 → **bump the logger first.** That is a hard prerequisite, not
+  a preference: ≤1.3.0 is an outright ERESOLVE against 2.x.
+- Already at `^1.4` → bump to `^1.5` opportunistically; not urgent.
 
-When 1.5.0 publishes, change this row's floor to `^1.5`. Revisit the whole row again when
+Revisit the whole row again when
 logger 2.0 ships; it is a major with a new emission path (records and transports
 replacing direct `console` calls), so it will be a genuine migration with its own
 leading-edge tier, not a hygiene bump.
@@ -322,6 +324,72 @@ for d in ~/Developer/GitHub/chrismessina/*/; do p="$d/package.json"; [ -f "$p" ]
 
 Scope that to `.dependencies`, not a bare `grep` for the package name — the kit's own
 `package.json` matches on its `name` field and inflates the count by one.
+
+### `@chrismessina/raycast-downloader` — floor is `^0.1.0` (new 2026-09-16)
+
+First-party. Detached, resumable downloads of large files that survive the Raycast command
+being unloaded — built for `fathom`'s 250–650 MB recording downloads and intended for reuse
+in `ios-app-search` and `fetch`. Published 2026-09-16 at `0.1.0`.
+
+> ⚠️ **It was `@chrismessina/raycast-download` until publication.** The name was taken, so
+> the package is `raycast-downloader`. Anything written against the old name — an import, a
+> `copy-runner` path, an asset filename — is stale. The local repo directory may still carry
+> the old name; the package name is what matters.
+
+**Three things a consumer must get right. All three fail in ways that pass local testing.**
+
+1. **Copy `dist/runner.bundle.js`, never `dist/runner.js`.** The runner is spawned as a
+   detached process from the consumer's `assets/`, where it has no siblings and no
+   `node_modules`. `runner.js` is `tsc` output that requires `./curl`, `./status`, `./paths`
+   — copying it out of `dist` copies a broken program that dies with `Cannot find module
+   './curl'` before a single byte transfers. `runner.bundle.js` is the self-contained build.
+   *(This shipped: every fathom download failed from inception until 2026-09-15. Finding an
+   artifact and that artifact being runnable are different properties, and only the first
+   one had a test.)*
+
+2. **The asset MUST be named `raycast-downloader-runner.js`.** `runnerCandidates()`
+   (`dist/detach.js`) searches `environment.assetsPath` for exactly that filename. In a
+   bundled, published extension `assetsPath` is the only dependable anchor — `__dirname` is
+   the bundle and `node_modules` is not shipped — so a misnamed asset falls through every
+   remaining candidate and fails as `runner_failed`. **Under `npm run dev` it still works**,
+   because the `cwd`/`node_modules` fallbacks resolve on a dev machine. So this breaks *only*
+   in the Store build, which is the worst place to find it. *(Nearly shipped on fathom
+   2026-09-16: the package rename left the asset on the old name with byte-identical
+   contents.)*
+
+   The consumer's `copy-runner` script, verbatim:
+
+   ```
+   node -e "const p=require('path'),f=require('fs'),s=p.join('node_modules','@chrismessina','raycast-downloader','dist','runner.bundle.js');if(!f.existsSync(s))throw new Error('Missing '+s+' — run the package build.');f.copyFileSync(s,p.join('assets','raycast-downloader-runner.js'))"
+   ```
+
+   Wire it into `build` and `dev` (`"build": "npm run copy-runner && ray build"`), and
+   **verify the copied artifact runs from an empty directory** rather than trusting a green
+   build:
+
+   ```bash
+   T=$(mktemp -d); cp assets/raycast-downloader-runner.js "$T/runner.js"
+   (cd "$T" && node runner.js; echo "exit=$?")   # exit=2, no "Cannot find module" = self-contained
+   ```
+
+   `exit 2` is correct — the runner refuses to start without a payload path
+   (`dist/runner.js:26-28`). A `Cannot find module` is the defect in item 1.
+
+3. **`assets/` is not gitignored, and the runner is ~84 KB of generated JavaScript.** It has
+   to be committed, because `ray publish` ships the extension root and the Store build never
+   runs `copy-runner`.
+
+**Peer range is already v2-ready:** `"@raycast/api": "^1.0.0 || ^2.0.0"`. It does not repeat
+the logger ≤1.3.0 / kit ≤0.1.3 mistake, so no companion bump is needed for an
+`@raycast/api` v2 migration. Verified 2026-09-16: `downloader@0.1.0` + `api@2.2.1` installs
+clean and `npm ls @raycast/api` exits 0.
+
+**Known rough edge, not yet fixed (2026-09-16).** `withFileLockSync` (`src/lock.ts`) runs its
+critical section *unsynchronized* when the lock cannot be acquired — a deliberate "never
+fatal" choice. That is also exactly when `acquireLease`'s compare-and-swap stops guaranteeing
+a single owner, so two consumers could both believe they hold a transfer. Surfaced by Codex
+on the fathom adoption rewrite; declined there because it needs a filesystem lock failure to
+reach. Revisit before the first non-fathom adopter.
 
 ## Stranded extensions (real migration candidates)
 
