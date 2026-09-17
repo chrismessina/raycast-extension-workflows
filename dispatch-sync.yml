@@ -34,7 +34,6 @@ env:
     fathom:raycast-fathom
     get-app-icon:raycast-get-app-icon
     karakeep:raycast-karakeep
-    luma:raycast-luma
     raycast-store-updates:raycast-store-updates
     reader-mode:raycast-reader
     secret-browser-commands:raycast-secret-browser-commands

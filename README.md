@@ -284,7 +284,6 @@ This table is the source of truth and **must stay in sync with `MIRROR_MAP` in
 | `chrismessina/raycast-secret-browser-commands` | `extensions/secret-browser-commands` | |
 | `chrismessina/raycast-reader` | `extensions/reader-mode` | `UPSTREAM_EXT_DIR` override set; dir ≠ repo name |
 | `chrismessina/raycast-bookface` | `extensions/bookface` | added 2026-07-15 |
-| `chrismessina/raycast-luma` | `extensions/luma` | added 2026-07-15 |
 | `chrismessina/raycast-tesla-energy` | `extensions/tesla-energy` | added 2026-07-15 |
 | `chrismessina/raycast-trimmy` | `extensions/trimmy` | added 2026-07-15 |
 | `chrismessina/raycast-wrap-unwrap` | `extensions/wrap-unwrap` | added 2026-07-15 |
@@ -294,6 +293,10 @@ This table is the source of truth and **must stay in sync with `MIRROR_MAP` in
 `google-maps`, `happenstance`, `ios-apps`, `memory-store`, `openskills`,
 `parallel-web-tools`, `sora`, `threads-client`. These 404 at
 `raycast/extensions/extensions/<name>`, so `sync-from-upstream` would fail every run.
+
+`luma` was in `MIRROR_MAP` from 2026-07-15 until 2026-09-17 and dispatched nowhere the whole
+time: `chrismessina/raycast-luma` exists only as a local checkout with no `origin` remote, so
+every dispatch 404'd silently. Push that repo before re-adding the row.
 Add them to the table + `MIRROR_MAP` only once they're published upstream.
 
 **Not an extension:** `raycast-logger` is a published npm package
