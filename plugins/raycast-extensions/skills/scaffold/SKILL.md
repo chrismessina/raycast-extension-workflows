@@ -15,6 +15,14 @@ metadata:
 
 The seam is **binary on existence**, so triggers never overlap with `develop`.
 
+## Documented learnings — cheapest to read here, before anything exists
+
+`docs/solutions/` in this repo holds learnings written from previous runs of these skills, filed by category with YAML frontmatter (`module`, `component`, `problem_type`, `tags`). Absolute path: `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/`. Three categories bear on a net-new extension: **`design-patterns/`** (implementation shapes that passed every gate and still broke), **`architecture-patterns/`** (integration shapes, e.g. AppleScript/JXA), and **`tooling-decisions/`** (including when a shared package is worth extracting rather than copying a helper in).
+
+**This skill is where the corpus is worth the most.** Every learning in `design-patterns/` describes a shape that was adopted, shipped, reviewed, and only then found wrong — and picking the right shape while the file is still empty costs nothing, while changing it later costs a review round and a Store release. `CONCEPTS.md` at the repo root defines the terms these learnings use.
+
+> **The recurring shape:** the expensive defects in this fleet are the ones `tsc`, `ray lint`, and `ray build` all pass — a cache key that does not vary, a hook returning stale data alongside an error, an effect that cannot tell a fetch from a cache restore. Scaffolding chooses several of these shapes in one sitting. See `docs/solutions/design-patterns/use-cached-promise-caching-semantics.md` before reaching for `useCachedPromise` in a generated command.
+
 ## Ideation: reuse, don't rebuild
 
 1. Run `superpowers:brainstorming` for idea-shaping. Do **not** re-implement an interview here.

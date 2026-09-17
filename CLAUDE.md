@@ -74,9 +74,10 @@ plugin-authoring ones. Array items in frontmatter are double-quoted.
 project-specific meaning (Fleet, House Style, Standalone mirror, Lock lease, Command process
 isolation). Read it when orienting; add to it when a term needed defining.
 
-**Nothing routed to either file until 2026-08-18**, when `ship/SKILL.md` gained a pointer. The
-other three skills still do not reference the corpus — a learning nothing points at does not
-compound, so wire new ones in when you write them.
+**Nothing routed to either file until 2026-08-18**, when `ship/SKILL.md` gained a pointer;
+`develop`, `scaffold`, and `review-pr` gained theirs on 2026-09-17, so all four now reference the
+corpus. A learning nothing points at does not compound, so wire new ones in when you write them —
+and when a new skill is added, give it a pointer at birth rather than discovering the gap later.
 
 ## Conventions
 

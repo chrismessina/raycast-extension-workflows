@@ -29,6 +29,14 @@ fork of it either.** A fork of the monorepo is just as large as the monorepo. Fe
 `extensions/<name>/` at the PR's head ref and nothing else — see
 [`../../reference/sparse-checkout-discipline.md`](../../reference/sparse-checkout-discipline.md).
 
+## Documented learnings — what to look for that CI cannot
+
+`docs/solutions/` in this repo holds learnings written from previous runs of these skills, filed by category with YAML frontmatter (`module`, `component`, `problem_type`, `tags`). Absolute path: `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/`. Two categories bear on reviewing someone else's submission: **`security-issues/`** (e.g. error display as a credential disclosure surface — a thing to actively look for in a contributor's error handling) and **`design-patterns/`** (shapes that pass every gate and still break).
+
+**A PR with green CI is not a reviewed PR.** The defects worth your time here are the ones no gate models: a cache key that does not vary per item, a hook returning stale data alongside an error, an effect that cannot tell a fetch from a cache restore. Each renders the wrong content or leaks state while `tsc`, `ray lint`, and `ray build` stay green. See `docs/solutions/design-patterns/use-cached-promise-caching-semantics.md`.
+
+> **Use the corpus for defects, never as a style stick.** These learnings encode *our* conventions alongside real hazards, and this skill's own caveat about judging a fork by your own conventions still governs. A contributor owes you correct code, not House Style. Raise a `design-patterns/` finding when it names a concrete failure the code will actually hit; keep a preference to yourself.
+
 ---
 
 ## Step 1 — Intake: resolve fork, branch, and extension from the PR number
