@@ -27,6 +27,14 @@ All three change code, so they all live here and all hand forward to `ship` when
 
 **Never sync or clone the full monorepo.** Sparse-checkout discipline applies to every operation here. Before any monorepo read/write, consult [`../../reference/sparse-checkout-discipline.md`](../../reference/sparse-checkout-discipline.md).
 
+## Documented learnings — read before writing the code, not after the review
+
+`docs/solutions/` in this repo holds learnings written from previous runs of these skills, filed by category with YAML frontmatter (`module`, `component`, `problem_type`, `tags`). Three categories carry `develop`-relevant material: **`design-patterns/`** (implementation shapes that passed every gate and still broke), **`architecture-patterns/`** (integration shapes, e.g. AppleScript/JXA), and **`security-issues/`**. Absolute path: `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/docs/solutions/`.
+
+Reach for it when you are about to use a `@raycast/api` or `@raycast/utils` primitive in a way you have not used before, when a hook or platform API behaves differently from how it reads, or when a review finding points at a dependency's runtime behaviour rather than at your own code. `CONCEPTS.md` at the repo root defines the terms these learnings use (Fleet, House Style, Command process isolation, Development renderer replay, Restored value).
+
+> **The recurring shape worth knowing before you start:** the expensive defects in this fleet are the ones `tsc`, `ray lint`, and `ray build` all pass — a cache key that does not vary, a hook returning stale data alongside an error, an effect that cannot tell a fetch from a cache restore. A green gate is evidence about types and syntax, never about a library's runtime semantics. When behaviour depends on a dependency, **read the dependency** — `node_modules/@raycast/utils/dist/module.js` is bundled but readable. See `docs/solutions/design-patterns/use-cached-promise-caching-semantics.md`.
+
 ---
 
 ## Before the first edit — verify the baseline, locate, then branch

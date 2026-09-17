@@ -34,6 +34,13 @@ Raycast, outside a production environment, mounts a command's React tree in stri
 
 Two consequences follow, and both mislead. Diagnosing the duplication by reading the extension's own source cannot succeed, because the cause is in the host runtime. And the host runtime is a *different installed copy* of the Raycast API package than the one in the extension's dependencies, so searching the local copy for the behavior returns nothing — an absence that proves nothing about what actually runs. A fix that must survive the replay coalesces the duplicated work for the replay window only, deliberately narrower than an in-flight lock, so a later genuine refresh still starts new work.
 
+### Restored value
+A cached value that a caching hook hands back the moment a view mounts, before — and independently of — any request completing. At the call site it is indistinguishable from a freshly fetched one: same shape, same variable, nothing marking which it is. Three consequences follow, and each misleads in a different direction.
+
+A failure does not clear it, so an error and perfectly usable data coexist; a view that branches on the error first throws away content it could have shown, which is most visible offline, where the cached content is the only content there is. Any freshness metadata a caller records is wrong if it is recorded when the value merely *appears*, because appearing is not fetching — only the callback that fires on a resolved request separates them, and a freshness mechanism keyed on appearance silently disables itself in exactly the case it exists for. And a caller that suppresses the hook's own failure reporting inherits responsibility for every case, including the one where stale content is on screen and nothing announces it.
+
+None of the three is visible to a typechecker, a linter, or a build.
+
 ### Lock lease
 A claim on a shared store that one command process holds while it completes a read-decide-write cycle, expressed as a file whose exclusive creation is the thing that grants it. Exclusive creation is what makes the claim safe; every other part of the mechanism exists only to handle a holder that died mid-cycle without releasing.
 
