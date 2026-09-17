@@ -13,16 +13,18 @@ A Claude Code plugin (`plugins/raycast-extensions/`) whose skills are keyed to l
 
 | Skill | Fires when | Owns |
 |---|---|---|
+| **`api-changelog`** | "what's new in `@raycast/api` X", "is it safe to upgrade", "they don't publish a changelog" | Deriving vendor release notes from artifacts: diff the npm tarballs and the installed Raycast.app bundles, place each change in the version that actually introduced it, and write a verified entry in [`docs/reference/raycast-api-changelog.md`](docs/reference/raycast-api-changelog.md). |
 | **`scaffold`** | "create / start a **new** extension" | Ideate (reuses `superpowers:brainstorming` + a Raycast-API overlay) and scaffold net-new. |
 | **`develop`** | "change code", "migrate to ESLint 10 / new Node", "**bring this up to my house style**" | Feature/refactor, gated major dep migrations, and the **house-style audit fix** (retrofit existing code to House Style). Absorbs the former `raycast-extension-modernizer`. |
 | **`ship`** | "submit / publish to the Store", "address review feedback" | Pre-flight (dep hygiene + **house-style audit** + weeding), Store-compliance gate, PR prep, review-feedback cycle, mirror-sync verification, post-merge cleanup. |
+| **`greptile-loop`** | "address the greptile feedback", "loop until 5/5", a pasted Greptile review | Driving an **already-submitted** Store PR's automated review to 5/5: fetch each round, triage every finding (fix the valid, answer the invalid with receipts), re-publish, wait for the next round. Runs after `ship`; never marks the PR ready for review — that's your click. |
 | **`review-pr`** | "review this PR", "run this fork locally", a pasted `raycast/extensions/pull/<N>` URL | Reviewing **someone else's** submission: resolve the contributor's fork and head branch, sparse-fetch only the touched extension, run it locally in Raycast, report findings. |
 
 The `develop`↔`ship` handoff is two-way: if `ship`'s read-only audit or Store review feedback needs **code**, it hands back to `develop`. `review-pr` hands to `develop` the same way when reviewing surfaces a defect in your own extension.
 
 Shared facts live in `plugins/raycast-extensions/reference/`: `house-style.md`, `keyboard-conventions.md`, `dep-gates.md`, `sparse-checkout-discipline.md`, `pr-and-cleanup.md`, `store-guidelines.md`, and `my-extensions-mirror.md` (which points back at the sync workflows below), plus an `eslint-rules/` directory.
 
-> **Status:** v0.5.0 — all four skills are authored and in use; none are stubs. `ship` is the largest (~58 KB), then `develop` (~33 KB), `review-pr` (~18 KB), `scaffold` (~7 KB). The version that matters is the matched pair `plugins/raycast-extensions/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`, both `0.5.0`; the root `package.json` version governs nothing. Original design spec (historical, predates `review-pr`): [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
+> **Status:** v0.6.1 — all six skills are authored and in use; none are stubs. `ship` is the largest (~58 KB), then `develop` (~33 KB), `review-pr` (~18 KB), `api-changelog` (~11 KB), `greptile-loop`, `scaffold` (~7 KB). The version that matters is the matched pair `plugins/raycast-extensions/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`, both `0.6.1`; the root `package.json` version governs nothing. Original design spec (historical, predates `review-pr`): [`docs/specs/2026-06-19-raycast-extensions-plugin-design.md`](docs/specs/2026-06-19-raycast-extensions-plugin-design.md).
 >
 > When this block and the files disagree, **the files win** — a stale "ship is a stub" note here once misrouted an agent shipping `claude-artifacts`. See [`CLAUDE.md`](CLAUDE.md).
 
