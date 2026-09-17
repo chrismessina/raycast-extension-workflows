@@ -25,6 +25,17 @@ related_components:
 
 ## Context
 
+> ⚠️ **RESOLVED UPSTREAM 2026-09-15 — read this as a dated incident, not a standing claim.**
+> Raycast fixed the docs (`raycast/extensions` #30879, #30538). Re-fetched 2026-09-15:
+> `developers.raycast.com/api-reference/keyboard` matches the runtime on **all 17** `Common`
+> constants, `Pin` included. The transferable lesson is below and still holds; the specific
+> accusation against that page does not. Leaving it unmarked let it be repeated as present fact
+> for a week, which a Raycast engineer had to correct.
+>
+> The live divergence today is different: **`@raycast/eslint-plugin` 2.2.0** disagrees with both
+> the runtime and the docs on five constants. See
+> `/Users/messina/Developer/GitHub/chrismessina/raycast-extension-workflows/plugins/raycast-extensions/reference/keyboard-conventions.md`.
+
 Raycast's public API reference documents `Keyboard.Shortcut.Common.Pin` as ⌘⇧P. The shipped runtime binds it to ⌘. Two automated reviewers, on two different days, each filed a duplicate-shortcut finding against the same PR: Sort by Popularity is ⌘⇧P, Pin is `Common.Pin`, therefore they collide.
 
 I complied with the first. Moved a long-standing user shortcut from ⇧⌘P to ⇧⌘S to resolve a collision that does not exist, and shipped it. The revert, and the two commits documenting why, are three commits of pure churn in a branch already under review.

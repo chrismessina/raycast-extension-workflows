@@ -401,7 +401,15 @@ Run before PR. Each layer is gardening, not engineering:
      >    shift itself, but do not "restore" the old numbers with `{ base: 1000 }` — reserve
      >    that for a figure shown next to something the user also reads in Finder.
    - Web-request extensions use `@chrismessina/raycast-logger`.
-   - Shortcuts use `Keyboard.Shortcut.Common`; **no conflicts within an ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one (see `reference/keyboard-conventions.md`).
+   - 🚨 **KEYBOARD SHORTCUT VALIDATION — a blocking step of its own, not a line item.** Shortcuts use `Keyboard.Shortcut.Common`, and **no two actions conflict within a resolved ActionPanel.** Assert by *reading the resolved panel* — **never by trusting a green `ray lint`, which does not check this invariant at all.** Resolve each custom combo against the `Common` table first: a hand-written `{cmd+shift+c}` *is* `Common.Copy` and collides with one.
+
+     **As of 2026-09-15 this step changed, and the old habit now produces wrong answers.** `@raycast/eslint-plugin` 2.2.0 (latest) **disagrees with BOTH the Raycast runtime and the published docs** on five constants — `Common.Duplicate`, `MoveUp`, `MoveDown`, `Remove`, `RemoveAll`. Runtime and docs agree with each other on all 17; the linter is the sole outlier. Three consequences for this audit, all blocking:
+
+     1. **Validate against the runtime OR the docs — they are co-equal; never against the linter.** Verified 2026-09-15: the runtime shim and `developers.raycast.com/api-reference/keyboard` agree on all 17 constants, and `@raycast/eslint-plugin` 2.2.0 is the sole outlier on five. Either source settles a binding; citing the docs page in a review is legitimate. Get the table from whichever is handier (both commands are in `reference/keyboard-conventions.md`) and compare every shortcut in the diff against it. If the two ever disagree, the runtime wins and the disagreement goes upstream.
+     2. **A `ray lint --fix` that touched shortcuts is a BEHAVIOUR change on those five, not a rename.** `--fix` rewrites a literal to the constant using the linter's stale values, and the action's real binding silently moves (e.g. `{cmd+shift+s}` → `Common.Duplicate` → actually ⌘D). **If `--fix` ran, `git diff` every action file and re-derive each rewritten binding from the runtime before shipping.**
+     3. **The fixer never reads `package.json` `platforms`** — the string does not appear in the rule source. It matches `macMatch || winMatch`, so on a **macOS-only** extension a literal `{ctrl+shift+c}` gets rewritten to `Common.Copy` on the *Windows* match and moves to ⌘⇧C. A collision the fixer created, on a platform the extension does not target.
+
+     Full divergence table, the three `--fix` hazards, and both extraction snippets: `reference/keyboard-conventions.md` (verified 2026-09-15 against Raycast 2.4.1.0; re-verify when Raycast updates, not only when `@raycast/eslint-config` bumps).
    - No hand-defined `Preferences`/`Arguments` types; no `any` casts (`[lint]` — backstop only; durable home is ESLint).
    - **Disable the Impeccable design hook first** (`/impeccable hooks off`) so a design false-positive can't masquerade as a house-style violation during this audit — it can't see `@raycast/api` UI (see the *Environment / tooling* rule in `reference/house-style.md`). Confirm `.impeccable/config.json` is gitignored so it never lands in the Store PR.
    - **Any failure that needs code → hand to `develop`'s house-style audit fix.**
@@ -737,6 +745,13 @@ returned — paste the actual output, don't assert it:
 - [ ] `npm run lint` → exit 0
 - [ ] **house-style audit** (step 2) → zero violations, having **read `package.json`
       `platforms` first** (absent ⇒ macOS-only; see `reference/house-style.md`)
+- [ ] 🚨 **keyboard shortcut validation** (step 2) → state which runtime version you validated
+      against (`plutil -p /Applications/Raycast.app/Contents/Info.plist | grep CFBundleShortVersionString`),
+      paste the extracted `Common` table, and name every shortcut in the diff with the binding it
+      resolves to. **Say explicitly whether `ray lint --fix` touched any shortcut** — if it did,
+      each rewritten binding is re-derived from the runtime, not assumed. A green `ray lint` is
+      NOT evidence here; it does not check collisions and its `Common` values are stale on five
+      constants.
 - [ ] weeding (step 3) → CHANGELOG top entry is new + `{PR_MERGE_DATE}`, and no already-dated
       entry was touched (diff against the published CHANGELOG). Entries describe what a user
       notices, not internals a later refactor can silently invalidate.

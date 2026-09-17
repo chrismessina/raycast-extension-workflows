@@ -2,16 +2,25 @@
 
 Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, and guarantee no two actions collide within an ActionPanel. Cited by `develop` (build-time + house-style audit-fix ruleset) and `ship` (the conflict invariant is a mechanical audit gate).
 
-- **🚨 The linter and the runtime now DISAGREE. The table below is the RUNTIME.** As of Raycast **2.3.0** / `@raycast/eslint-plugin` **2.2.0**, five constants bind different keys in the app than the linter believes. Rows marked ⚠️ are the diverging ones. There is no longer a single authoritative source — you need both, and which one you consult depends on the question you are answering:
+- **🚨 `@raycast/eslint-plugin` is the ODD ONE OUT — the runtime and the docs agree with each other.** Verified 2026-09-15: the runtime shim and `developers.raycast.com` match on **all 17** constants; `@raycast/eslint-plugin` **2.2.0** disagrees with both on **five**. Rows marked ⚠️ are those five. This is a bug in the linter, not a docs problem:
 
-  | Question you are answering | Source to use |
-  |---|---|
-  | "What will the user actually press?" — collisions, review findings, UX | **The runtime** (the table below) |
-  | "Why did `prefer-common-shortcut` flag / rewrite this?" | **`COMMON_SHORTCUTS`** in the linter |
+  | Source | Agrees with the table below? | Standing |
+  |---|---|---|
+  | Raycast runtime shim (app 2.4.1.0) | ✅ 17/17 | **Authoritative** |
+  | `developers.raycast.com/api-reference/keyboard` | ✅ 17/17 | **Authoritative — co-equal** |
+  | `@raycast/eslint-plugin` 2.2.0 `COMMON_SHORTCUTS` | ❌ 5 wrong (the ⚠️ rows) | Not a binding source |
 
-  The divergence, verified 2026-09-11 (linter value → runtime value):
+  **The docs and the runtime are co-equal authorities.** Either settles a binding on its own, and
+  citing the docs page in a review is legitimate — it is Raycast-maintained and currently correct on
+  every row. **If they ever disagree, the runtime wins** (it is what the user's fingers hit), and
+  that disagreement is itself worth reporting upstream rather than quietly working around.
 
-  | Constant | `@raycast/eslint-plugin` 2.2.0 | Raycast 2.3.0 runtime |
+  Consult `COMMON_SHORTCUTS` only to explain why `prefer-common-shortcut` flagged or rewrote
+  something. It is not evidence about what a shortcut does.
+
+  The divergence, verified 2026-09-15 (linter → runtime **and docs**, which agree):
+
+  | Constant | `@raycast/eslint-plugin` 2.2.0 | Runtime **and docs** |
   |---|---|---|
   | `Common.Duplicate` (macOS) | ⌘ ⇧ S | **⌘ D** |
   | `Common.MoveDown` | ⌘ ⇧ ↓ / ctrl ⇧ ↓ | **⌘ ⌥ ↓ / ctrl alt ↓** |
@@ -19,7 +28,7 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
   | `Common.Remove` (macOS) | ⌃ D | **⌃ X** |
   | `Common.RemoveAll` | ⌃ ⇧ D / ctrl ⇧ D | **⌃ ⇧ X / ctrl alt D** |
 
-  **What is established and what is not.** Established: these two artifacts, at these two versions, disagree today. *Not* established: that the split originated in 2.0, or which side moved. Raycast's v2 release note says *"Some common shortcuts have also changed on macOS to match Raycast 2.0"*, which makes "the app moved and the linter did not" the likely story — but it is inference, and the snapshots prove only the current disagreement. Do not cite a version as the origin.
+  **What is established and what is not.** Established: at these versions, the linter disagrees with both the runtime and the published docs, which agree with each other. That two independent Raycast-controlled sources agree makes the linter the outlier rather than a matter of interpretation. *Not* established: when the split opened, or which side moved. Raycast's v2 release note says *"Some common shortcuts have also changed on macOS to match Raycast 2.0"*, making "the app and docs moved, the linter did not" the likely story — but that is inference. Do not cite a version as the origin.
 
 - **Linter source (for explaining lint behaviour, NOT for collisions):** `COMMON_SHORTCUTS` in `node_modules/@raycast/eslint-plugin/dist/rules/prefer-common-shortcut.js`. Regenerate it with:
   ```bash
@@ -29,6 +38,7 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
     for (const c of list) console.log(c.name, "|", c.macOS.modifiers.join("+")+"+"+c.macOS.key, "|", c.Windows.modifiers.join("+")+"+"+c.Windows.key);
   '
   ```
+- **Docs source (now a valid cross-check):** `curl -sL https://developers.raycast.com/api-reference/keyboard.md | awk '/### Keyboard.Shortcut.Common/,0' | grep -E '^\|'` — the `.md` suffix returns raw markdown, so the table is directly diffable. Re-fetch rather than trusting any note in this file about what that page says.
 - **Runtime source (authoritative for the table below):** the shim the app actually loads —
   ```bash
   python3 - <<'EOF'
@@ -49,13 +59,27 @@ Map ad-hoc `Action` shortcuts to `Keyboard.Shortcut.Common` **by semantics**, an
   That directory has no `package.json`, so it carries no version of its own — it is whatever the installed Raycast is. Check the app instead: `plutil -p /Applications/Raycast.app/Contents/Info.plist | grep CFBundleShortVersionString`.
 - **Last verified:** 2026-09-11 against the Raycast **2.3.0.0** runtime shim and `@raycast/eslint-plugin` **2.2.0**. The 2026-07-13 snapshot was taken from the linter alone; by 2026-09-11 it no longer matched the app for five constants. (When the two diverged is not established — see above.) The 2026-06-19 snapshot before it had **five wrong macOS bindings** (`CopyName`, `CopyPath`, `Duplicate`, `Pin`, `Remove`). A wrong table causes the exact mis-mapping this file exists to prevent — regenerate from an artifact, never from prose docs.
 - **Drift guard:** re-run **both** commands above whenever `@raycast/eslint-config` is bumped **or the Raycast app updates**, and diff the two full 17-member lists against each other — watching only the linter cannot surface a runtime-only change, which is exactly how the 2026-09-11 split went unnoticed. If either set changed, update the table, refresh the divergence list, and bump "last verified".
-- 🚨 **Answering a collision finding? Read the table below BEFORE the vendor's docs page.** This file exists for authoring, but the expensive failure is *review*: a reviewer reports "these two actions share a shortcut", you go read the value on `developers.raycast.com`, and it is wrong. Verified 2026-09-07: that page documents `Common.Pin` as ⌘⇧P; the shipped runtime binds ⌘ . — as the `Common.Pin` row in the table below has said all along. Complying cost a user-visible shortcut change to correct code, then a revert. Two separate automated reviewers filed the same finding from the same wrong page, which reads as corroboration and is one source counted twice.
+- ✅ **The vendor docs are CORRECT as of 2026-09-15 — all 17 rows.** Fetched
+  `https://developers.raycast.com/api-reference/keyboard.md` and compared every row against the
+  runtime shim: **17/17 identical**, `Pin` included. The docs page is now a valid corroborating
+  source for a binding, and this file no longer tells you to distrust it.
+
+  > **History, because the correction matters.** An earlier version of this bullet said that page
+  > documented `Common.Pin` as ⌘⇧P and called it unreliable. That was true when written
+  > (2026-09-07) and **Raycast has since fixed it** — via `raycast/extensions` #30879 and #30538.
+  > A stale warning about a vendor doc is itself a hazard: it kept asserting the docs were wrong
+  > for a week after they were right, and it got repeated into `api-changelog` as present-tense
+  > fact. **Date every claim about a third-party document, and re-fetch before repeating it.**
+
+  Where a reviewer's ⌘⇧P claim comes from is still worth knowing: it was the *old* docs, and it
+  cost a user-visible shortcut change to correct code, then a revert. If someone cites ⌘⇧P today,
+  ask for the source — it is no longer on that page.
   Confirm a value against an artifact, never the docs — and since 2026-09-11 that artifact must be **the runtime**, not `COMMON_SHORTCUTS` (the linter disagrees with the app on five constants; see the top of this file). The runtime the app actually loads:
   ```bash
   grep -oE 'Pin:\{macOS:\{[^}]*\}[^}]*\}' \
     "/Applications/Raycast.app/Contents/Resources/macos-app_RaycastDesktopApp.bundle/Contents/Resources/api/node_modules/@raycast/api/index.js"
   ```
-  The npm `@raycast/api` ships types only and has no `index.js`, so looking there finds nothing and feels like confirmation. Why the docs are wrong and stay wrong: `docs/solutions/workflow-issues/wrong-vendor-docs-manufacture-review-findings.md`.
+  The npm `@raycast/api` ships types only and has no `index.js`, so looking there finds nothing and feels like confirmation. The historical case where the docs *were* wrong (since fixed): `docs/solutions/workflow-issues/wrong-vendor-docs-manufacture-review-findings.md` — read it as a dated incident, not as a standing claim about that page.
 
 ---
 
