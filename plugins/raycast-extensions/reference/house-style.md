@@ -573,6 +573,35 @@ did, which defeats the point of the command.
   bare `"Toggled"` / `"… Toggled"` with no on/off or named result, and flag it. Not a
   hard `[verify]` assertion (the "genuinely unknowable" carve-out is a judgment call).
 
+### `[both]` Toast copy never says "this window" — a toast is a detached HUD
+
+A toast does not belong to a window. It renders as a floating pill with no frame,
+no title bar, and nothing around it the phrase could refer to — so copy that says
+"keep this window open", "close this window", or "in another window" points at
+something the user cannot see.
+
+- **Say the app, or say the fact.** `"keep Raycast open"` is the instruction a user
+  can act on. When the distinction is really between two *command instances* — which
+  the user has no name for and does not think about — drop the noun entirely and state
+  the fact: `"This recording is already downloading."` beats `"…is being downloaded in
+  another window."`
+- **Why it slips in:** the phrase is written while reading code, where "the command's
+  window" is the accurate mental model for the lifecycle being described. It survives
+  `tsc`, `ray lint`, `ray build`, and a Codex review, because every one of those reads
+  the string as an opaque literal. Only looking at the rendered toast catches it.
+- **The doc comment is part of the rule.** When a toast's wording encodes a real
+  lifecycle fact (here: the generation poll dies with the command, so dismissing really
+  does stop it), the comment above it tends to restate the old wording. Update both, or
+  the next reader restores the string to match the comment.
+- **Audit:** `[both]` — grep toast literals for the noun and read each hit:
+  ```bash
+  grep -rnE '(message|title): "[^"]*window' src/
+  ```
+  Hits inside comments are fine; hits inside a user-facing string are the defect.
+  *(fathom, 2026-09-16: `"… · keep this window open"` shipped to a HUD that has no
+  window. Chris caught it on sight — "seeing the toast as a HUD makes 'keep this window
+  open' not make sense." Two sibling strings had the same noun and had not been seen yet.)*
+
 ### `[both]` Every `isShowingDetail` list carries a "Toggle Sidebar" action
 
 Any `List` that renders a detail pane (`isShowingDetail`) must let the user collapse it —
