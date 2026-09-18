@@ -118,12 +118,21 @@ toast below, whose `errorMessage` is produced this way.
 - **Audit backstop:** grep `catch (` blocks that reference `.message` without an
   accompanying `instanceof Error`.
 
-### `[both]` Typecheck with `tsc --noEmit` — `ray build` does NOT typecheck
+### `[both]` Typecheck with `tsc --noEmit` — `ray lint` never typechecks, and a plain `ray build` does not either
 
-`ray build` (esbuild) and `ray lint` (ESLint) **strip/skip types without checking
-them** — type errors compile and lint clean, then fail in editors and external
-reviewers running `tsc`. So passing build + lint is **not** evidence the code
-typechecks.
+`ray lint` (ESLint) **skips types entirely**, and a default `ray build` (esbuild)
+**strips them without checking** — type errors compile and lint clean, then fail
+in editors and for external reviewers running `tsc`.
+
+> **Correction, 2026-09-17.** The blanket claim that "`ray build` does NOT
+> typecheck" is false for `ray build -e dist`, which many extensions use as their
+> `build` script. The installed `@raycast/api` runs a typecheck when
+> `environment === "dist"` and prints `checked TypeScript` in its output — verified
+> by reading `node_modules/@raycast/api/dist/commands/build/index.js`. Run
+> `tsc --noEmit` anyway: it is the gate reviewers run, it does not depend on which
+> environment the repo's script happens to pass, and it is the one that fails
+> loudly and on its own. Do not tell a contributor their build proves nothing when
+> their build output literally says it checked.
 
 - **Always run `npx tsc --noEmit` as the real type gate** before claiming a change
   is done, alongside build + lint. Treat a non-zero `tsc` exit as a failure even if
@@ -254,10 +263,99 @@ await showToast({
 An animated toast tells the user "wait, something is happening." If the operation is an instant `LocalStorage` write, a `setState`, or a `Clipboard.copy`, there is nothing to wait for: show the terminal Success toast directly, with no `Animated` phase at all.
 
 - **Reserve `Animated` for genuinely async work** — network requests, disk IO, spawned processes, anything with a plausible wait.
-- **For genuinely async work, both terminal patterns are supported.** Mutate in place (`toast.style = Toast.Style.Success`, or `failToast` for the failure half — see the kit section below), or `await toast.hide()` then show a fresh toast. Pick either; they are equivalent.
+- **For genuinely async work, both terminal patterns are supported.** Mutate in place (`toast.style = Toast.Style.Success`, or `failToast` for the failure half — see the kit section below), or `await toast.hide()` then show a fresh toast. Pick either; they are equivalent **for a simple sequential flow, where nothing else can reach the toast slot in between.** The moment the toast is held across an await that can be superseded, aborted, or raced by another toast, neither is safe as written — see the no-id rule immediately below.
 - **Audit:** grep `Toast.Style.Animated`. For each, confirm genuinely async work is awaited between creation and the terminal state. Flag any whose only intervening work is `LocalStorage` / `setState` / `Clipboard`.
 
 **Evidence, and a correction worth recording.** 2026-07-27, `raycast-claude`: Chris screenshotted "Preset saved!" beside a still-spinning icon. The first diagnosis was *"mutating `toast.style` on a presented toast never swaps the animated icon"* and it was written down as a general law. **That claim is false** — Raycast's SDK documents live mutation as the supported pattern, and it demonstrably worked at other sites in that same codebase. The actual defect was that **15 of the 17 sites were instant `LocalStorage` writes that should never have had a spinner**. The fix was deleting the `Animated` phase, not changing how the terminal state is set. If you see the old claim resurface anywhere, this entry supersedes it.
+
+### `[both]` A toast has no id — `hide()` and mutation act on whatever is on screen NOW
+
+A `Toast` handle reads like a reference to a specific toast. It is not: there is
+one toast slot, `showToast` replaces whatever occupies it, and `hide()` /
+property mutation act on whatever is visible *now*. Every bug below comes from
+code written as if the handle had identity.
+
+**None of this is in the API docs**, which is why the rule exists. [Toast][t]
+documents `hide()` as `() => Promise<void>` and says nothing about identity,
+about one-at-a-time, or about rejection; [showFailureToast][f] says nothing about
+aborts or about replacing a visible toast. Keep the provenance straight when you
+apply this:
+
+- **Verified in the installed `@raycast/utils` source** (`dist/module.js`) — the
+  only reliable answer to any hook-ordering question: `usePromise` suppresses
+  `onError` for an `AbortError`, and it supersedes a run by aborting it, swapping
+  the controller and invoking the next run **without awaiting the old one's
+  settlement**.
+- **Repo convention, not platform behaviour** — a wrapper that short-circuits on
+  `AbortError` (e.g. `showBrewFailureToast`). Check the extension you are in;
+  Raycast's own `showFailureToast` makes no such promise, and if yours does not
+  ignore aborts then rule 2 below is already handled for you.
+- **Inference, treated as cheap insurance** — that `hide()` may reject. The type
+  permits it and the implementation is not inspectable, so treat it as
+  best-effort rather than proving it either way.
+
+[t]: https://developers.raycast.com/api-reference/feedback/toast
+[f]: https://developers.raycast.com/utilities/functions/showfailuretoast
+
+**Four rules for any animated toast held across an `await`:**
+
+1. **Never hide after a genuine failure.** The failure toast has already taken the
+   slot; hiding dismisses *it* and the user loses the error entirely. Let the
+   replacement stand — `showToast` needs no `hide()` first.
+2. **Do hide on an abort.** `usePromise` suppresses `onError` for an `AbortError`,
+   so unless your failure path is reached some other way, nothing replaces your
+   toast and it spins forever after the user has walked away. (If the extension's
+   failure helper also short-circuits on aborts, as `brew`'s does, that closes the
+   last route to a replacement.)
+3. **Guard on ownership, not just on timing.** `usePromise` supersedes a run by
+   aborting it, swapping the controller and invoking the next run **without
+   awaiting the old one's settlement**. Run N's deferred hide therefore lands after
+   run N+1 has shown its own toast and dismisses N+1's. Take a per-run token
+   (`const mine = ++runRef.current`) and hide only while `runRef.current === mine`.
+4. **Never `await` the hide into the work promise.** `hide()` returns a promise,
+   and a rejection awaited inside the fetcher turns a *successful* operation into a
+   visible failure. Fire and forget with a logged `.catch()` — the same call costs
+   nothing and removes the question.
+
+**Put the toast inside the promise, not in a `useEffect` keyed on `isLoading`.**
+The effect-with-cleanup shape is the most inviting way to write this and it is
+wrong by construction: the cleanup is deferred, so it fires exactly when the slot
+has moved on.
+
+```ts
+const runRef = useRef(0);
+const { data } = usePromise(async () => {
+  const mine = ++runRef.current;
+  const clear = (t: Toast) => {
+    if (runRef.current !== mine) return;              // superseded — not ours
+    t.hide().catch((e) => logger.log("hide failed", e)); // never awaited
+  };
+  const progress = await showToast({ style: Toast.Style.Animated, title: "Working…" });
+  try {
+    const result = await work(signal);
+    clear(progress);
+    return result;
+  } catch (err) {
+    if (isAbortError(err)) clear(progress);           // nothing else will
+    throw err;                                        // real failure: leave it
+  }
+}, [], { abortable, onError: showFailureToast });
+```
+
+- **Audit:** grep `Toast.Style.Animated` and every `.hide()`. For each, ask: can a
+  second toast reach the slot between creation and hide? Flag any `hide()` in a
+  `useEffect` cleanup, any hide on a failure path, any `await …hide()` inside a
+  fetcher, and any hide with no ownership guard.
+- **Evidence:** 2026-09-17, `brew` #31164 — three passes to get one toast right.
+  v1 hid in an effect cleanup and would have dismissed the failure toast raised
+  microseconds earlier, swallowing the error. v2 fixed that but left the toast
+  spinning on abort, because the failure helper ignores `AbortError`. v3 fixed
+  that and introduced the supersession race in rule 3. Each version was correct
+  about the case in front of it and blind to the next. **What ended it was reading
+  the installed `@raycast/utils` source** (`dist/module.js`) for the actual
+  abort/revalidate ordering — the API surface does not tell you, and reasoning
+  about it from the outside produced three wrong answers in a row. Go to the
+  installed source first for any question about hook ordering or lifecycle.
 
 ### `[both]` Show a file with `Action.ShowInFinder` / `showInFinder()`, never `open(path, "Finder")`
 

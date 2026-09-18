@@ -219,6 +219,10 @@ The retrofit pass: take an extension that works (a fork you're contributing to, 
 1. **Load** `house-style.md`. Take its `[build]` / `[both]` / `[lint]` entries (the mutating ones). Skip `[verify]`-only entries — those are `ship`'s read-only assertions.
 2. **Scan** the codebase for each rule's governed pattern:
    - Failure toasts → grep `Toast.Style.Failure`; flag any without a Copy-Error action.
+   - Progress toasts → grep `Toast.Style.Animated` and every `.hide()`. A toast handle has no
+     identity, so flag any `hide()` in a `useEffect` cleanup, on a failure path, `await`ed inside
+     a fetcher, or with no per-run ownership guard. See the no-id rule in `house-style.md` — this
+     one is invisible to review and cost three passes on `brew` #31164.
    - Shortcuts → find every `<Action>` with an inline `shortcut={{...}}`; map by semantics (see `keyboard-conventions.md`).
    - Web requests → grep `fetch`/`axios`/`node-fetch`/`useFetch`; if present, check for `@chrismessina/raycast-logger`.
    - Custom icons → grep `icon=`/`source:` for a bare `.svg`/`.png` filename with no adjacent `tintColor`; a monochrome glyph without one is invisible in one of the two themes, and `fill="currentColor"` in the asset does **not** fix it.
