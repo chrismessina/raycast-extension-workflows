@@ -4,7 +4,7 @@ Known-good dependency targets for Raycast extensions. Consulted by `develop`'s
 **Intent 2 — Modernization** before any *major-version* migration, and by `ship`'s dep
 hygiene to know where the non-breaking ceiling is.
 
-- **Last verified:** 2026-09-16 for the `@chrismessina/raycast-downloader` row (new); 2026-09-15 for the `@chrismessina/raycast-logger` row (floor moved to `^1.5`); 2026-09-09 for the `@chrismessina/raycast-kit` row (floor moved to `^0.2.0`); 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
+- **Last verified:** 2026-09-17 for the `@chrismessina/raycast-downloader` row (floor moved to `^0.1.5`); 2026-09-15 for the `@chrismessina/raycast-logger` row (floor moved to `^1.5`); 2026-09-09 for the `@chrismessina/raycast-kit` row (floor moved to `^0.2.0`); 2026-08-27 for the `@raycast/api` row (floor moved to `^2.1`); 2026-08-25 for `@raycast/utils` /
   `@chrismessina/raycast-logger` (second adopter, `context7`, plus census of the
   13 fleet extensions that depend on it); 2026-08-21 for the `@raycast/api` /
   `@raycast/utils` rows (see the v2 section); 2026-07-13 for the rest, by census of all 34
@@ -82,7 +82,7 @@ leading edge — is `develop`'s modernization intent, and it is gated on this fi
 | `@raycast/utils` | `^2.2` | `^2.3` | `ios-apps` (2.3.0), `context7` (2.3.0); `^1.17` still in use, see note below |
 | `@chrismessina/raycast-logger` | **`^1.5`** | — | `attio`, `digger`, `ios-apps`, `karakeep`, `reader` (all 1.4.0); `fathom` on 1.5.0; **required before `@raycast/api` v2**. Floor moved `^1.4` → `^1.5` on 2026-09-15, Chris confirmed, now that 1.5.0 is published |
 | `@chrismessina/raycast-kit` | **`^0.2.0`** | — | `threads` (0.2.0, first adopter of the `bytes` subpath); floor moved 0.1.4 → 0.2.0 on 2026-09-09, Chris confirmed. Still satisfies the `@raycast/api` v2 peer prerequisite — see below |
-| `@chrismessina/raycast-downloader` | `^0.1.0` | — | `fathom` (0.1.0, first and only adopter; published 2026-09-16). Declares `@raycast/api` `^1.0.0 \|\| ^2.0.0`, so it needs no companion bump for v2 — see below |
+| `@chrismessina/raycast-downloader` | **`^0.1.5`** | — | `fathom` (0.1.5). Floor moved `^0.1.0` → `^0.1.5` on 2026-09-17, Chris confirmed: every release in between is a resume-path **correctness** fix, and an adopter below the floor corrupts files rather than merely missing a feature. Declares `@raycast/api` `^1.0.0 \|\| ^2.0.0`, so no companion bump for v2 — see below |
 | `eslint` | `^9` | `^10` | `airbuddy` (10.5.0), `tesla-energy` (10.1.0) |
 | `typescript` | `^5.9` | `^6` | `airbuddy` (6.0.3), `tesla-energy` (6.0.2) |
 | `@raycast/eslint-config` | `^2.1` | `^2.2` | `airbuddy` (2.2.0) |
@@ -325,11 +325,27 @@ for d in ~/Developer/GitHub/chrismessina/*/; do p="$d/package.json"; [ -f "$p" ]
 Scope that to `.dependencies`, not a bare `grep` for the package name — the kit's own
 `package.json` matches on its `name` field and inflates the count by one.
 
-### `@chrismessina/raycast-downloader` — floor is `^0.1.0` (new 2026-09-16)
+### `@chrismessina/raycast-downloader` — floor is `^0.1.5` (moved 2026-09-17)
 
 First-party. Detached, resumable downloads of large files that survive the Raycast command
 being unloaded — built for `fathom`'s 250–650 MB recording downloads and intended for reuse
-in `ios-app-search` and `fetch`. Published 2026-09-16 at `0.1.0`.
+in `ios-app-search` and `fetch`. Published 2026-09-16; the floor is `0.1.5`.
+
+> 🚨 **Below `^0.1.5` this package CORRUPTS FILES on resume. The floor is not a preference.**
+> Each release between 0.1.0 and 0.1.5 fixes a distinct way a resumed transfer appends real
+> bytes onto bytes that do not describe what the server is about to send, and every one of
+> them fails silently — exit 0, a plausible file size, a corrupt payload:
+>
+> - **0.1.2** — an unfollowed 3xx leaves the redirect BODY in the `.part`; the rollback that
+>   trims it swallowed its own failure, so `curl -C -` spliced the download onto HTML.
+> - **0.1.3** — `partialUnsafe`, so contamination is machine-checkable rather than a sentence
+>   glued onto an error message.
+> - **0.1.4** — provenance in `<partPath>.state` plus `If-Range` on every resume. `curl -C -`
+>   asserts the bytes on disk are a correct prefix and **nothing downstream can check that**:
+>   measured against a Range-capable server, an 8-byte garbage prefix resumes to exit 0,
+>   HTTP 206, and a wrong file.
+> - **0.1.5** — validators were parsed per-FIELD across the redirect chain instead of
+>   per-BLOCK, so a 302's `ETag` described bytes it had never seen.
 
 > ⚠️ **It was `@chrismessina/raycast-download` until publication.** The name was taken, so
 > the package is `raycast-downloader`. Anything written against the old name — an import, a
@@ -373,11 +389,53 @@ in `ios-app-search` and `fetch`. Published 2026-09-16 at `0.1.0`.
    ```
 
    `exit 2` is correct — the runner refuses to start without a payload path
-   (`dist/runner.js:26-28`). A `Cannot find module` is the defect in item 1.
+   (`dist/runner.js:27-29` in 0.1.5). A `Cannot find module` is the defect in item 1.
+
+> ✅ **Rules 1 and 2 are both enforceable — stop relying on care.** Both failed anyway, and
+> each was caught by hand at a different stage. A hash check turns either into a loud
+> failure, and it belongs on **`publish`**, not `build`: `copy-runner` already runs on
+> `build` and `dev`, which are the paths where a mistake is harmless, and the Store build
+> runs neither. Add to the consumer's `scripts`:
+>
+> ```
+> "verify-runner": "node -e \"const f=require('fs'),p=require('path'),c=require('crypto');const a=p.join('assets','raycast-downloader-runner.js'),b=p.join('node_modules','@chrismessina','raycast-downloader','dist','runner.bundle.js');const h=x=>{if(!f.existsSync(x))throw new Error('Missing '+x);return c.createHash('sha256').update(f.readFileSync(x)).digest('hex')};const A=h(a),B=h(b);if(A!==B){console.error('Runner asset is STALE.\\n  asset : '+A+'\\n  bundle: '+B+'\\nRun: npm run copy-runner');process.exit(1)}console.log('runner asset matches ('+A.slice(0,12)+')')\"",
+> "publish": "npm run verify-runner && npx @raycast/api@latest publish"
+> ```
+>
+> **Prove it fails before trusting it** — append a byte to the asset and confirm exit 1, and
+> move the asset aside and confirm exit 1. A guard that cannot fail is worse than none.
+> Shipped on `fathom` 2026-09-17; it would have caught both incidents above without a human.
 
 3. **`assets/` is not gitignored, and the runner is ~84 KB of generated JavaScript.** It has
    to be committed, because `ray publish` ships the extension root and the Store build never
    runs `copy-runner`.
+
+**Do NOT write a consumer-side guard on resume safety. The consumer cannot see what the
+sidecar sees.**
+
+`fathom` tried four predicates for "is this partial safe to resume" and three were wrong —
+each shipped, each was caught by an adversarial review, and each did DAMAGE while failing:
+
+| Predicate | Why it was wrong |
+| --- | --- |
+| `error.httpStatus` is 3xx | a rollback that SUCCEEDS still carries a 3xx, and a 304 leaves the original bytes perfectly valid |
+| `bytesDownloaded === 0` | also zero after an early network failure that had written real bytes |
+| `partialUnsafe` on the status | a status is addressed by id and a retry takes a NEW id, so it was never readable |
+| *(none — let the package decide)* | correct |
+
+**The failure mode is the part worth remembering.** Rejecting a partial did not clean it
+up. It allocated a fresh filename via `uniquePath`, downloaded a second copy, and left the
+original — possibly hundreds of megabytes — orphaned in the user's directory. So a guard
+meant to prevent rare corruption reliably wasted disk and bandwidth on a common path. **A
+guard that strands data on the common path is a worse trade than the pathological risk it
+defends against**, and that arithmetic is easy to miss while writing the guard, because the
+risk is vivid and the cost is invisible.
+
+Since 0.1.4 the package records provenance beside the partial and decides resume, reset or
+fail itself. A consumer should select a candidate on what it can actually know — a terminal
+transfer for this recording, final output path free, partial non-empty — and hand the path
+over. Anything more is second-guessing a decision made with information the consumer does
+not have.
 
 **Peer range is already v2-ready:** `"@raycast/api": "^1.0.0 || ^2.0.0"`. It does not repeat
 the logger ≤1.3.0 / kit ≤0.1.3 mistake, so no companion bump is needed for an
